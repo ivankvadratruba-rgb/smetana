@@ -47,7 +47,7 @@ def wrap_px(draw, text, font, max_w):
     return lines
 
 
-def draw_card(index, total, title, summary, date_text):
+def draw_card(index, total, title, summary, date_text, counter=True):
     top, bottom = PALETTES[index % len(PALETTES)]
     img = gradient(top, bottom)
     d = ImageDraw.Draw(img)
@@ -55,7 +55,8 @@ def draw_card(index, total, title, summary, date_text):
     max_w = W - 140
 
     d.text((70, 90), f"НОВОСТИ ДНЯ  {date_text}", font=f_small, fill=(255, 255, 255))
-    d.text((70, H - 130), f"{index + 1} из {total}", font=f_small, fill=(255, 255, 255))
+    if counter:
+        d.text((70, H - 130), f"{index + 1} из {total}", font=f_small, fill=(255, 255, 255))
 
     # Заголовок: берём самый крупный шрифт, при котором он помещается в 5 строк
     for size in (84, 72, 62, 54):

@@ -15,6 +15,28 @@ SEC_PER_CARD = 3.5
 FPS = 30
 
 
+def assemble(pngs, durations, audio_path, out_path):
+    """Склеивает картинки в вертикальное видео; durations: секунды на каждую картинку."""
+    total = sum(durations)
+    inputs, filters = [], []
+    for i, (p, dur) in enumerate(zip(pngs, durations)):
+        inputs += ["-loop", "1", "-t", f"{dur:.3f}", "-i", str(p)]
+        frames = max(1, int(dur * FPS))
+        filters.append(
+            f"[{i}:v]scale=1080:1920,zoompan=z='min(zoom+0.0008,1.12)':d={frames}"
+            f":x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':s=1080x1920:fps={FPS},setsar=1[v{i}]"
+        )
+    chain = "".join(f"[v{i}]" for i in range(len(pngs)))
+    filters.append(f"{chain}concat=n={len(pngs)}:v=1:a=0[v]")
+    cmd = ["ffmpeg", "-y", "-hide_banner", "-loglevel", "error", *inputs,
+           "-i", str(audio_path), "-filter_complex", ";".join(filters),
+           "-map", "[v]", "-map", f"{len(pngs)}:a", "-t", f"{total:.3f}",
+           "-c:v", "libx264", "-pix_fmt", "yuv420p", "-c:a", "aac", "-b:a", "160k",
+           "-movflags", "+faststart", str(out_path)]
+    subprocess.run(cmd, check=True)
+    return out_path
+
+
 def build(news_path, out_path, audio_path=None):
     news = json.loads(Path(news_path).read_text(encoding="utf-8"))
     work = Path(out_path).parent

@@ -61,17 +61,18 @@ def call_gemini(prompt):
     return data["candidates"][0]["content"]["parts"][0]["text"]
 
 
-def call_openai(prompt):
-    body = json.dumps({
-        "model": OPENAI_MODEL,
-        "messages": [{"role": "user", "content": prompt}],
-    }).encode("utf-8")
+def call_openai(prompt, model=None):
+    model = model or OPENAI_MODEL
+    payload = {"model": model, "messages": [{"role": "user", "content": prompt}]}
+    if model.startswith("gpt-5"):
+        payload["reasoning_effort"] = os.environ.get("OPENAI_REASONING", "low")  # быстрее и без обрывов
+    body = json.dumps(payload).encode("utf-8")
     headers = {"Content-Type": "application/json"}
     key = os.environ.get("OPENAI_API_KEY")
     if key:
         headers["Authorization"] = f"Bearer {key}"
     req = urllib.request.Request(OPENAI_URL, data=body, headers=headers)
-    with urllib.request.urlopen(req, timeout=60) as r:
+    with urllib.request.urlopen(req, timeout=180) as r:
         data = json.loads(r.read().decode("utf-8"))
     return data["choices"][0]["message"]["content"]
 

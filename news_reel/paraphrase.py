@@ -1,8 +1,9 @@
 """Перефразирует новости своими словами, чтобы не копировать формулировки автора.
 
-Использует бесплатный тариф Gemini API. Ключ берётся из переменной окружения GEMINI_API_KEY
-(в GitHub Actions это секрет). Если ключа нет в окружении, запрос уходит без него:
-так работает прокси облачной сессии, который подставляет ключ сам.
+Провайдер выбирается переменной PARAPHRASE_PROVIDER: openai (по умолчанию) или gemini.
+Ключи: OPENAI_API_KEY или GEMINI_API_KEY (в GitHub Actions это секреты). Если ключа нет в окружении,
+запрос уходит без него: так работает прокси облачной сессии, который подставляет ключ сам.
+Модели меняются переменными OPENAI_MODEL и GEMINI_MODEL.
 
 Запуск через API:   python3 paraphrase.py in.json out.json
 Ручной режим (например, ChatGPT по подписке, без API):
@@ -18,7 +19,10 @@ import urllib.error
 import urllib.request
 from pathlib import Path
 
+PROVIDER = os.environ.get("PARAPHRASE_PROVIDER", "openai")  # openai или gemini
 MODEL = os.environ.get("GEMINI_MODEL", "gemini-2.5-flash")
+OPENAI_MODEL = os.environ.get("OPENAI_MODEL", "gpt-4o-mini")
+OPENAI_URL = "https://api.openai.com/v1/chat/completions"
 URL = "https://generativelanguage.googleapis.com/v1beta/models/{m}:generateContent"
 
 RULES = (
@@ -53,6 +57,21 @@ def call_gemini(prompt):
     return data["candidates"][0]["content"]["parts"][0]["text"]
 
 
+def call_openai(prompt):
+    body = json.dumps({
+        "model": OPENAI_MODEL,
+        "messages": [{"role": "user", "content": prompt}],
+    }).encode("utf-8")
+    headers = {"Content-Type": "application/json"}
+    key = os.environ.get("OPENAI_API_KEY")
+    if key:
+        headers["Authorization"] = f"Bearer {key}"
+    req = urllib.request.Request(OPENAI_URL, data=body, headers=headers)
+    with urllib.request.urlopen(req, timeout=60) as r:
+        data = json.loads(r.read().decode("utf-8"))
+    return data["choices"][0]["message"]["content"]
+
+
 def parse_answer(text, n):
     arr = json.loads(text)
     if not isinstance(arr, list) or len(arr) != n:
@@ -67,7 +86,8 @@ def parse_answer(text, n):
 
 
 def paraphrase(items):
-    new = parse_answer(call_gemini(build_prompt(items)), len(items))
+    call = call_openai if PROVIDER == "openai" else call_gemini
+    new = parse_answer(clean_answer(call(build_prompt(items))), len(items))
     return merge(items, new)
 
 
@@ -113,7 +133,8 @@ if __name__ == "__main__":
     try:
         data["items"] = paraphrase(data["items"])
     except urllib.error.HTTPError as e:
-        sys.exit(f"Gemini вернул {e.code}: проверьте ключ и название модели ({MODEL})")
+        sys.exit(f"{PROVIDER} вернул {e.code}: проверьте ключ и название модели "
+                 f"({OPENAI_MODEL if PROVIDER == 'openai' else MODEL})")
     dst.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
     for it in data["items"]:
         print("-", it["title"])

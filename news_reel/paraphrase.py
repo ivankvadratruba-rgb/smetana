@@ -21,17 +21,21 @@ from pathlib import Path
 
 PROVIDER = os.environ.get("PARAPHRASE_PROVIDER", "openai")  # openai или gemini
 MODEL = os.environ.get("GEMINI_MODEL", "gemini-2.5-flash")
-OPENAI_MODEL = os.environ.get("OPENAI_MODEL", "gpt-4o-mini")
+OPENAI_MODEL = os.environ.get("OPENAI_MODEL", "gpt-4o")
 OPENAI_URL = "https://api.openai.com/v1/chat/completions"
 URL = "https://generativelanguage.googleapis.com/v1beta/models/{m}:generateContent"
 
 RULES = (
-    "Ты редактор новостного клипа. Перепиши каждую новость СВОИМИ словами по-русски. "
-    "Правила: сохраняй только факты из текста, ничего не добавляй и не выдумывай; "
-    "не повторяй исходные формулировки дословно (меняй порядок и слова, но не смысл); "
-    "заголовок до 80 знаков, спокойный нейтральный тон, без оценок и призывов; "
-    "анонс до 140 знаков или пустая строка; "
-    "если в тексте сказано 'утверждает', 'по словам', 'очевидцы', сохрани эту оговорку. "
+    "Ты редактор новостного клипа. Напиши каждую новость ЗАНОВО своими словами по-русски. "
+    "Правила: используй только факты из текста, ничего не добавляй и не выдумывай; "
+    "заголовок построй иначе, чем в исходнике: другой порядок слов, другие глаголы и существительные, "
+    "но тот же смысл; не копируй из исходника ни одного предложения целиком; "
+    "заголовок до 80 знаков; анонс это ОДНО короткое предложение до 100 знаков своими словами "
+    "(или пустая строка); спокойный нейтральный тон, без оценок и призывов; "
+    "оговорки 'утверждает', 'по словам', 'очевидцы', 'предположительно' обязательно сохрани; "
+    "ничего не заменяй по смыслу: если в исходнике 'девушка', 'правые', 'неслучайной', не меняй это на другое; "
+    "ВАЖНО: звёздочки '*' после имён и названий и пометки вроде 'признан иноагентом' "
+    "переноси без изменений, не убирай и не добавляй. "
     "Верни только JSON-массив той же длины и в том же порядке: "
     '[{"title": "...", "summary": "..."}, ...]'
 )
@@ -85,9 +89,49 @@ def parse_answer(text, n):
     return out
 
 
-def paraphrase(items):
+import difflib
+
+
+def sim(a, b):
+    return difflib.SequenceMatcher(None, a.lower(), b.lower()).ratio()
+
+
+def problems(old, new):
+    """Что не так с одной перефразированной новостью (пустой список = всё в порядке)."""
+    bad = []
+    src = old["title"] + " " + old.get("summary", "")
+    if sim(old["title"], new["title"]) > 0.6:
+        bad.append("заголовок слишком похож на исходный")
+    if new["summary"] and sim(old.get("summary", "") or src, new["summary"]) > 0.5:
+        bad.append("анонс слишком похож на исходный")
+    if src.count("*") != (new["title"] + new["summary"]).count("*"):
+        bad.append("потеряны или добавлены звёздочки *")
+    return bad
+
+
+def paraphrase(items, retries=2):
     call = call_openai if PROVIDER == "openai" else call_gemini
     new = parse_answer(clean_answer(call(build_prompt(items))), len(items))
+    for _ in range(retries):
+        bad = {i: problems(o, n) for i, (o, n) in enumerate(zip(items, new)) if problems(o, n)}
+        if not bad:
+            break
+        idx = list(bad)
+        notes = "; ".join(f"№{k + 1}: {', '.join(v)}" for k, v in bad.items())
+        again = parse_answer(clean_answer(call(build_prompt([items[i] for i in idx]) +
+                             "\n\nПредыдущая попытка не годится (" + notes + "). Перепиши заново сильнее.")), len(idx))
+        for i, n in zip(idx, again):
+            new[i] = n
+    # то, что всё равно слишком похоже, не оставляем: анонс убираем, а заголовок помечаем
+    flagged = []
+    for i, (o, n) in enumerate(zip(items, new)):
+        b = problems(o, n)
+        if "анонс слишком похож на исходный" in b:
+            n["summary"] = ""
+        if b:
+            flagged.append((i + 1, b))
+    for k, b in flagged:
+        print(f"ВНИМАНИЕ №{k}: {', '.join(b)}", file=sys.stderr)
     return merge(items, new)
 
 

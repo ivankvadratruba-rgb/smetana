@@ -4,7 +4,11 @@
 (в GitHub Actions это секрет). Если ключа нет в окружении, запрос уходит без него:
 так работает прокси облачной сессии, который подставляет ключ сам.
 
-Запуск: python3 paraphrase.py in.json out.json
+Запуск через API:   python3 paraphrase.py in.json out.json
+Ручной режим (например, ChatGPT по подписке, без API):
+  1) python3 paraphrase.py --prompt in.json out/prompt.txt   -> вставьте prompt.txt в чат
+  2) сохраните ответ чата в out/answer.json
+  3) python3 paraphrase.py --apply in.json out/answer.json out.json
 Модель можно сменить переменной GEMINI_MODEL.
 """
 import json
@@ -64,17 +68,47 @@ def parse_answer(text, n):
 
 def paraphrase(items):
     new = parse_answer(call_gemini(build_prompt(items)), len(items))
-    result = []
+    return merge(items, new)
+
+
+def clean_answer(text):
+    """Из ответа чата берём только JSON-массив (убираем ```json и пояснения)."""
+    text = text.strip()
+    a, b = text.find("["), text.rfind("]")
+    if a == -1 or b == -1:
+        raise ValueError("в ответе нет JSON-массива")
+    return text[a:b + 1]
+
+
+def merge(items, new):
+    out = []
     for old, n in zip(items, new):
         merged = dict(old)
         merged.update(title=n["title"], summary=n["summary"])
-        result.append(merged)
-    return result
+        out.append(merged)
+    return out
 
 
 if __name__ == "__main__":
-    src = Path(sys.argv[1] if len(sys.argv) > 1 else "out/news.json")
-    dst = Path(sys.argv[2] if len(sys.argv) > 2 else "out/news_rewritten.json")
+    args = sys.argv[1:]
+    mode = args.pop(0) if args and args[0] in ("--prompt", "--apply") else None
+    if mode == "--prompt":
+        src, dst = Path(args[0]), Path(args[1] if len(args) > 1 else "out/prompt.txt")
+        data = json.loads(src.read_text(encoding="utf-8"))
+        dst.parent.mkdir(parents=True, exist_ok=True)
+        dst.write_text(build_prompt(data["items"]), encoding="utf-8")
+        print(f"Запрос сохранён: {dst}. Вставьте его в чат и сохраните ответ в файл.")
+        sys.exit(0)
+    if mode == "--apply":
+        src, ans, dst = Path(args[0]), Path(args[1]), Path(args[2] if len(args) > 2 else "out/news_rewritten.json")
+        data = json.loads(src.read_text(encoding="utf-8"))
+        new = parse_answer(clean_answer(ans.read_text(encoding="utf-8")), len(data["items"]))
+        data["items"] = merge(data["items"], new)
+        dst.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
+        print("Готово:", dst)
+        sys.exit(0)
+    src = Path(args[0] if args else "out/news.json")
+    dst = Path(args[1] if len(args) > 1 else "out/news_rewritten.json")
     data = json.loads(src.read_text(encoding="utf-8"))
     try:
         data["items"] = paraphrase(data["items"])

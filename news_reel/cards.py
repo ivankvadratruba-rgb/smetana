@@ -4,7 +4,6 @@
 """
 import json
 import sys
-import textwrap
 from pathlib import Path
 
 from PIL import Image, ImageDraw, ImageFont
@@ -33,25 +32,55 @@ def gradient(top, bottom):
     return img
 
 
+def wrap_px(draw, text, font, max_w):
+    """Перенос по ширине в пикселях."""
+    lines, cur = [], ""
+    for word in text.split():
+        trial = (cur + " " + word).strip()
+        if draw.textlength(trial, font=font) <= max_w or not cur:
+            cur = trial
+        else:
+            lines.append(cur)
+            cur = word
+    if cur:
+        lines.append(cur)
+    return lines
+
+
 def draw_card(index, total, title, summary, date_text):
     top, bottom = PALETTES[index % len(PALETTES)]
     img = gradient(top, bottom)
     d = ImageDraw.Draw(img)
     f_small = ImageFont.truetype(FONT_REG, 44)
-    f_title = ImageFont.truetype(FONT_BOLD, 84)
-    f_sum = ImageFont.truetype(FONT_REG, 52)
+    max_w = W - 140
 
     d.text((70, 90), f"НОВОСТИ ДНЯ  {date_text}", font=f_small, fill=(255, 255, 255))
     d.text((70, H - 130), f"{index + 1} из {total}", font=f_small, fill=(255, 255, 255))
 
-    y = 420
-    for line in textwrap.wrap(title, width=18):
+    # Заголовок: берём самый крупный шрифт, при котором он помещается в 5 строк
+    for size in (84, 72, 62, 54):
+        f_title = ImageFont.truetype(FONT_BOLD, size)
+        t_lines = wrap_px(d, title, f_title, max_w)
+        if len(t_lines) <= 5:
+            break
+    t_lines = t_lines[:5]
+    y = 330
+    for line in t_lines:
         d.text((70, y), line, font=f_title, fill=(255, 255, 255))
-        y += 105
+        y += int(size * 1.25)
+
+    # Анонс: сколько влезет до нижнего поля
+    f_sum = ImageFont.truetype(FONT_REG, 48)
     y += 50
-    for line in textwrap.wrap(summary, width=30):
+    room = (H - 230 - y) // 64
+    s_lines = wrap_px(d, summary, f_sum, max_w) if summary else []
+    if len(s_lines) > room:
+        s_lines = s_lines[:max(room, 0)]
+        if s_lines:
+            s_lines[-1] = s_lines[-1].rstrip(" .,;") + "…"
+    for line in s_lines:
         d.text((70, y), line, font=f_sum, fill=(230, 230, 235))
-        y += 68
+        y += 64
     return img
 
 

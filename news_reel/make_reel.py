@@ -13,7 +13,7 @@ import build_video
 import cards
 import voice
 
-BPM = 92
+BPM = 96
 BAR = 4 * 60 / BPM          # длина такта, секунд
 LEAD, GAP, TAIL = 0.3, 0.25, 0.5
 

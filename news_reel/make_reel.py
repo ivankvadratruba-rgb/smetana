@@ -55,7 +55,7 @@ def mix_audio(segs, total, work, beat_vol=0.35):
         ms = int(at * 1000)
         f.append(f"[{k}:a]adelay={ms}|{ms},volume=1.6[v{k}]")
     labels = "[b]" + "".join(f"[v{k}]" for k in range(1, len(clips) + 1))
-    f.append(f"{labels}amix=inputs={len(clips) + 1}:normalize=0,alimiter=limit=0.95[a]")
+    f.append(f"{labels}amix=inputs={len(clips) + 1}:normalize=0,loudnorm=I=-14:TP=-1.5:LRA=11,aresample=44100,pan=stereo|c0=c0|c1=c0[a]")
     out = work / "mix.m4a"
     subprocess.run(["ffmpeg", "-y", "-hide_banner", "-loglevel", "error", *inputs,
                     "-filter_complex", ";".join(f), "-map", "[a]", "-t", f"{total:.3f}",

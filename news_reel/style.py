@@ -76,24 +76,41 @@ hashtags: 3-5 хэштегов через пробел, по теме, или п
 
 Подписчиков сейчас: {followers}.
 
-Верни только JSON с полями name, image_style, suno_style, lyrics_extra, cta, hashtags и ещё rationale (2-3 предложения по-русски: что показала статистика и почему выбран этот стиль)."""
+Верни только JSON с полями name, image_style, suno_style, lyrics_extra, scene_mood, cta, hashtags и ещё rationale (2-3 предложения по-русски: что показала статистика и почему выбран этот стиль)."""
+
+
+MOODS = ["яркий день, интерьеры, транспорт, крупные планы предметов",
+         "утро, оживлённые улицы, детали городской среды",
+         "закат, природа, вода, небо",
+         "вечер, уютные интерьеры, тёплый свет",
+         "пасмурный день, архитектура, необычные ракурсы сверху"]
 
 
 def next_style(h, trends=""):
+    posts = h["posts"]
+    last = posts[-1]["style"] if posts else DEFAULT
+    rotate = MOODS[len(posts) % len(MOODS)]       # запасной настрой сцен, если модель его не вернула
     brief = [{"date": p.get("date"), "style": {k: p["style"].get(k) for k in KEYS},
-              "metrics": p.get("metrics", {})} for p in h["posts"][-10:]]
+              "metrics": p.get("metrics", {})} for p in posts[-10:]]
     q = PROMPT.format(trends=trends.strip() or "нет заметок", history=json.dumps(brief, ensure_ascii=False),
                       followers=h.get("followers", "?"))
     for _ in range(3):
         try:
             txt = paraphrase.call_openai(q, MODEL)
             d = json.loads(txt[txt.find("{"):txt.rfind("}") + 1])
-            if all(isinstance(d.get(k), str) for k in KEYS) and d["image_style"].strip() and d["suno_style"].strip():
-                return {k: d[k].strip() for k in KEYS} | {"rationale": str(d.get("rationale", "")).strip()}
         except Exception as e:
             print("выбор стиля не удался, повтор:", e)
-    last = h["posts"][-1]["style"] if h["posts"] else DEFAULT
-    return dict(last, rationale="модель не ответила, взят прошлый стиль")
+            continue
+        ok = lambda k: isinstance(d.get(k), str) and d[k].strip()
+        if not (ok("image_style") and ok("suno_style")):
+            print("в ответе нет image_style или suno_style, повтор")
+            continue
+        cfg = {k: (d[k].strip() if ok(k) else (rotate if k == "scene_mood" else last.get(k, DEFAULT[k])))
+               for k in KEYS if k != "hashtags"}
+        cfg["hashtags"] = d["hashtags"].strip() if isinstance(d.get("hashtags"), str) else ""
+        cfg["rationale"] = str(d.get("rationale", "")).strip()
+        return cfg
+    return dict(last, scene_mood=rotate, rationale="модель не ответила, стиль прошлого дня с новым настроем сцен")
 
 
 def apply(cfg):

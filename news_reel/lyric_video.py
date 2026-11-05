@@ -4,7 +4,6 @@
   python3 lyric_video.py news.json lyrics.json song.mp3 song_timestamps.json out/reel_lyric.mp4
 
 Иллюстрации: тёмная стилизованная графика (gpt-image-2), без лиц, людей, надписей и сцен насилия.
-На видео стоит пометка, что иллюстрации созданы ИИ.
 """
 import json
 import os
@@ -126,7 +125,6 @@ def label_overlay(date_text, path):
     y, m = date_text[:4], date_text[5:7]
     day = date_text[8:10]
     d.text((50, 30), f"НОВОСТИ В ТРЕКЕ  {day}.{m}.{y}", font=ImageFont.truetype(FONT_BOLD, 38), fill=(255, 255, 255, 235))
-    d.text((50, 80), "иллюстрации и музыка созданы ИИ", font=ImageFont.truetype(FONT_REG, 30), fill=(255, 255, 255, 190))
     img.save(path)
 
 

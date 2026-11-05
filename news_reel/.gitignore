@@ -1,3 +1,7 @@
 .env
 __pycache__/
 out/
+# остальные ракурсы персонажа хранятся в R2 (character/), в репозитории только front_closeup и front_waist
+news_reel/character/*.png
+!news_reel/character/front_closeup.png
+!news_reel/character/front_waist.png

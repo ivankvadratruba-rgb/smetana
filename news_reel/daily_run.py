@@ -18,6 +18,8 @@ import instagram_publish
 import lyric_video
 import paraphrase
 import rap
+import stats
+import style
 import suno
 import telegram_source
 
@@ -54,10 +56,10 @@ def upload_r2(path, name):
 CTA = "Подпишись на Новости в треке, чтобы не пропустить завтрашний выпуск."
 
 
-def make_hook(items, lyr):
+def make_hook(items, lyr, hook_style="самое цепляющее из выпуска, одной фразой"):
     """Короткий крючок для начала подписи: самое цепляющее из выпуска, только по фактам новостей."""
     titles = "\n".join(f"- {it['title']}" for it in items)
-    q = ("Выбери из новостей дня самую цепляющую, но не про гибель людей и не про атаки, если есть другой вариант, и напиши для подписи к ролику один короткий крючок "
+    q = (f"Крючок для начала подписи: {hook_style}. Выбери из новостей дня самую цепляющую, но не про гибель людей и не про атаки, если есть другой вариант, и напиши для подписи к ролику один короткий крючок "
          "по-русски, до 90 символов, без кавычек и эмодзи, без вопроса про подписку. "
          "Используй только факты из заголовка, ничего не добавляй. Верни только текст крючка.\n\n" + titles)
     try:
@@ -69,12 +71,15 @@ def make_hook(items, lyr):
     return lyr["items"][0][0].rstrip(",.;:")
 
 
-def make_caption(day, items, lyr):
-    return f"{make_hook(items, lyr)}\n\nНовости дня, {day.day} {MONTHS[day.month]}\n{CTA}"
+def make_caption(day, items, lyr, cfg=None):
+    cfg = cfg or style.DEFAULT
+    tail = f"\n\n{cfg['hashtags']}" if cfg.get("hashtags") else ""
+    return (f"{make_hook(items, lyr, cfg['hook_style'])}\n\nНовости дня, {day.day} {MONTHS[day.month]}\n"
+            f"{cfg['cta']}{tail}")
 
 
 def main():
-    args = [a for a in sys.argv[1:] if not a.startswith("--")]
+    args = [a for i, a in enumerate(sys.argv[1:], 1) if not a.startswith("--") and sys.argv[i - 1] != "--trends"]
     msk = timezone(timedelta(hours=3))
     day = (datetime.strptime(args[0], "%Y-%m-%d").date() if args else datetime.now(msk).date())
     name = f"reel_{day.isoformat()}.mp4"
@@ -83,6 +88,16 @@ def main():
 
     out = Path("out") / day.isoformat()
     out.mkdir(parents=True, exist_ok=True)
+
+    trends = ""
+    if "--trends" in sys.argv:
+        tf = Path(sys.argv[sys.argv.index("--trends") + 1])
+        trends = tf.read_text(encoding="utf-8") if tf.exists() else ""
+    hist = style.load_history()
+    style.refresh_stats(hist)
+    cfg = style.next_style(hist, trends)
+    style.apply(cfg)
+    print(f"стиль дня: {cfg['name']}\nпочему: {cfg['rationale']}", flush=True)
 
     items = telegram_source.collect(CHANNEL, day, 8)
     if len(items) < MIN_ITEMS:
@@ -102,14 +117,18 @@ def main():
 
     if "--no-publish" in sys.argv:
         print("публикация отключена флагом --no-publish:", video)
-        print("подпись была бы:\n" + make_caption(day, news["items"], lyr))
+        print("подпись была бы:\n" + make_caption(day, news["items"], lyr, cfg))
         return
     public = upload_r2(video, name)
-    caption = make_caption(day, news["items"], lyr)
+    caption = make_caption(day, news["items"], lyr, cfg)
     print("подпись:\n" + caption)
     cid = instagram_publish.create_container(public, caption)
     instagram_publish.wait_ready(cid)
-    print("опубликовано, id:", instagram_publish.publish(cid))
+    media_id = instagram_publish.publish(cid)
+    print("опубликовано, id:", media_id)
+    hist["posts"].append({"date": day.isoformat(), "media_id": media_id, "style": cfg,
+                          "published_at": datetime.now(timezone.utc).isoformat()})
+    style.save_history(hist)
 
 
 if __name__ == "__main__":

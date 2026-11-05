@@ -39,6 +39,11 @@ def create_container(video_url, caption):
                                    "caption": caption, "share_to_feed": "true"})["id"]
 
 
+def create_story_container(video_url):
+    """Сторис с видео (до 60 секунд). Подписи у сторис нет."""
+    return call(f"{IG_ID}/media", {"media_type": "STORIES", "video_url": video_url})["id"]
+
+
 def wait_ready(cid, timeout=600):
     t = time.time()
     while time.time() - t < timeout:

@@ -20,10 +20,11 @@ MODEL = os.environ.get("SUNO_MODEL", "V4_5")
 STYLE = os.environ.get("SUNO_STYLE", "dark russian boom bap rap, 96 BPM, melancholic, male vocal, "
                                       "minor key, sparse piano and vinyl crackle, calm delivery")
 TITLE = "Новости дня"
+UA = "smetana-news-reel/1.0"
 
 
 def call(path, data=None):
-    headers = {"Content-Type": "application/json"}
+    headers = {"Content-Type": "application/json", "User-Agent": UA}
     if os.environ.get("SUNO_API_KEY"):
         headers["Authorization"] = "Bearer " + os.environ["SUNO_API_KEY"]
     body = json.dumps(data).encode() if data is not None else None
@@ -61,7 +62,7 @@ def generate(lyr, out_dir, timeout=900):
     if not track:
         raise RuntimeError("таймаут генерации песни")
     mp3 = out / "suno_1.mp3"
-    with urllib.request.urlopen(track["audioUrl"], timeout=120) as r:
+    with urllib.request.urlopen(urllib.request.Request(track["audioUrl"], headers={"User-Agent": UA}), timeout=120) as r:
         mp3.write_bytes(r.read())
     ts = call("generate/get-timestamped-lyrics", {"taskId": task, "audioId": track["id"]})
     (out / "suno_1_ts.json").write_text(json.dumps({"code": 200, "msg": "success", "data": ts},

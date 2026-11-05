@@ -63,6 +63,7 @@ def generate(lyr, out_dir, timeout=900):
             break
     if not track:
         raise RuntimeError("таймаут генерации песни")
+    (out / "suno_ids.json").write_text(json.dumps({"taskId": task, "audioId": track["id"]}), encoding="utf-8")
     mp3 = out / "suno_1.mp3"
     with urllib.request.urlopen(urllib.request.Request(track["audioUrl"], headers={"User-Agent": UA}), timeout=120) as r:
         mp3.write_bytes(r.read())
@@ -70,6 +71,30 @@ def generate(lyr, out_dir, timeout=900):
     (out / "suno_1_ts.json").write_text(json.dumps({"code": 200, "msg": "success", "data": ts},
                                                    ensure_ascii=False), encoding="utf-8")
     return mp3, out / "suno_1_ts.json"
+
+
+def separate_vocals(out_dir, timeout=600):
+    """Отделяет чистый вокал от готовой песни (нужны suno_ids.json от generate). Возвращает путь к mp3."""
+    out = Path(out_dir)
+    ids = json.loads((out / "suno_ids.json").read_text(encoding="utf-8"))
+    task = call("vocal-removal/generate", {"taskId": ids["taskId"], "audioId": ids["audioId"],
+                                           "type": "separate_vocal",
+                                           "callBackUrl": "https://example.com/suno-callback"})["taskId"]
+    t = time.time()
+    while time.time() - t < timeout:
+        time.sleep(10)
+        info = call(f"vocal-removal/record-info?taskId={task}") or {}
+        print("Suno вокал:", info.get("successFlag") or info.get("status"), flush=True)
+        resp = info.get("response") or {}
+        url = resp.get("vocalUrl")
+        if url:
+            dst = out / "vocals.mp3"
+            with urllib.request.urlopen(urllib.request.Request(url, headers={"User-Agent": UA}), timeout=120) as r:
+                dst.write_bytes(r.read())
+            return dst
+        if str(info.get("successFlag", "")).upper().endswith("FAILED"):
+            raise RuntimeError(f"Suno не отделил вокал: {info}")
+    raise RuntimeError("таймаут отделения вокала")
 
 
 if __name__ == "__main__":

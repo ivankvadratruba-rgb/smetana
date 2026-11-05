@@ -84,27 +84,38 @@ def retry(fn, tries=3, pause=20):
             time.sleep(pause)
 
 
-STORY_MAX = 59.0     # сторис через API: видео не длиннее 60 секунд
+STORY_MAX = 59.0     # сторис через API: каждое видео не длиннее 60 секунд
 
 
-def post_story(video, name):
-    """Публикует то же видео в сторис; для длинных роликов делает обрезанную копию. Возвращает id сторис."""
+def split_video(video, parts=2):
+    """Делит видео на равные части по времени (минимум 2, больше, если часть выйдет длиннее лимита сторис)."""
     video = Path(video)
     dur = float(subprocess.run(["ffprobe", "-v", "error", "-show_entries", "format=duration", "-of", "csv=p=0",
                                 str(video)], capture_output=True, text=True).stdout.strip())
-    src = video
-    if dur > STORY_MAX:
-        src = video.with_name("story.mp4")
-        subprocess.run(["ffmpeg", "-y", "-hide_banner", "-loglevel", "error", "-i", str(video), "-t", str(STORY_MAX),
-                        "-af", f"afade=t=out:st={STORY_MAX - 1.5}:d=1.5", "-c:v", "libx264", "-pix_fmt", "yuv420p",
-                        "-preset", "veryfast", "-c:a", "aac", "-movflags", "+faststart", str(src)], check=True)
-    url = retry(lambda: upload_r2(src, "story_" + name))
+    n = max(parts, int(dur // STORY_MAX) + (1 if dur % STORY_MAX else 0))
+    step = dur / n
+    out = []
+    for i in range(n):
+        dst = video.with_name(f"story_{i + 1}.mp4")
+        subprocess.run(["ffmpeg", "-y", "-hide_banner", "-loglevel", "error", "-ss", f"{i * step:.3f}",
+                        "-i", str(video), "-t", f"{step:.3f}", "-c:v", "libx264", "-pix_fmt", "yuv420p",
+                        "-preset", "veryfast", "-c:a", "aac", "-movflags", "+faststart", str(dst)], check=True)
+        out.append(dst)
+    return out
 
-    def container():
-        c = instagram_publish.create_story_container(url)
-        instagram_publish.wait_ready(c)
-        return c
-    return instagram_publish.publish(retry(container))
+
+def post_story(video, name):
+    """Публикует ролик в сторис двумя частями подряд. Возвращает список id сторис."""
+    ids = []
+    for i, part in enumerate(split_video(video), 1):
+        url = retry(lambda: upload_r2(part, f"story{i}_" + name))
+
+        def container():
+            c = instagram_publish.create_story_container(url)
+            instagram_publish.wait_ready(c)
+            return c
+        ids.append(instagram_publish.publish(retry(container)))
+    return ids
 
 
 def main():
@@ -164,8 +175,8 @@ def main():
                           "published_at": datetime.now(timezone.utc).isoformat()})
     style.save_history(hist)
     try:    # сторис не должна ломать выпуск: рилс уже опубликован и записан в историю
-        hist["posts"][-1]["story_id"] = post_story(video, name)
-        print("сторис опубликована, id:", hist["posts"][-1]["story_id"])
+        hist["posts"][-1]["story_ids"] = post_story(video, name)
+        print("сторис опубликованы, id:", hist["posts"][-1]["story_ids"])
         style.save_history(hist)
     except Exception as e:
         print("сторис не опубликована:", e)

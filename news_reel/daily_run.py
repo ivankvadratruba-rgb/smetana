@@ -56,26 +56,19 @@ def upload_r2(path, name):
 CTA = "Подпишись на Новости в треке, чтобы не пропустить завтрашний выпуск."
 
 
-def make_hook(items, lyr, hook_style="самое цепляющее из выпуска, одной фразой"):
-    """Короткий крючок для начала подписи: самое цепляющее из выпуска, только по фактам новостей."""
-    titles = "\n".join(f"- {it['title']}" for it in items)
-    q = (f"Крючок для начала подписи: {hook_style}. Выбери из новостей дня самую цепляющую, но не про гибель людей и не про атаки, если есть другой вариант, и напиши для подписи к ролику один короткий крючок "
-         "по-русски, до 90 символов, без кавычек и эмодзи, без вопроса про подписку. "
-         "Используй только факты из заголовка, ничего не добавляй. Верни только текст крючка.\n\n" + titles)
-    try:
-        hook = paraphrase.call_openai(q, rap.RAP_MODEL).strip().strip('"«»').splitlines()[0].strip()
-        if 10 <= len(hook) <= 120:
-            return hook
-    except Exception as e:
-        print("крючок не получился, беру строку из песни:", e)
-    return lyr["items"][0][0].rstrip(",.;:")
+def lyrics_text(lyr):
+    """Текст песни для подписи: вступление, куплеты по новостям (с пустой строкой между ними), концовка."""
+    blocks = [lyr["intro"]] + ["\n".join(r) for r in lyr["items"]] + [lyr["outro"]]
+    return "\n\n".join(blocks)
 
 
-def make_caption(day, items, lyr, cfg=None):
+def make_caption(day, lyr, cfg=None):
+    """Дата, текст трека, призыв к подписке, хэштеги. Лимит Instagram на подпись: 2200 символов."""
     cfg = cfg or style.DEFAULT
-    tail = f"\n\n{cfg['hashtags']}" if cfg.get("hashtags") else ""
-    return (f"{make_hook(items, lyr, cfg['hook_style'])}\n\nНовости дня, {day.day} {MONTHS[day.month]}\n"
-            f"{cfg['cta']}{tail}")
+    tail = f"\n\n{cfg['cta']}" + (f"\n\n{cfg['hashtags']}" if cfg.get("hashtags") else "")
+    head = f"Новости дня, {day.day} {MONTHS[day.month]}\n\n"
+    room = 2200 - len(head) - len(tail)
+    return head + lyrics_text(lyr)[:room].rstrip() + tail
 
 
 def main():
@@ -117,10 +110,10 @@ def main():
 
     if "--no-publish" in sys.argv:
         print("публикация отключена флагом --no-publish:", video)
-        print("подпись была бы:\n" + make_caption(day, news["items"], lyr, cfg))
+        print("подпись была бы:\n" + make_caption(day, lyr, cfg))
         return
     public = upload_r2(video, name)
-    caption = make_caption(day, news["items"], lyr, cfg)
+    caption = make_caption(day, lyr, cfg)
     print("подпись:\n" + caption)
     cid = instagram_publish.create_container(public, caption)
     instagram_publish.wait_ready(cid)

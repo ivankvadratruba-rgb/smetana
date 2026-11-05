@@ -20,10 +20,9 @@ def assemble(pngs, durations, audio_path, out_path):
     total = sum(durations)
     inputs, filters = [], []
     for i, (p, dur) in enumerate(zip(pngs, durations)):
-        inputs += ["-loop", "1", "-t", f"{dur:.3f}", "-i", str(p)]
-        frames = max(1, int(dur * FPS))
+        inputs += ["-framerate", str(FPS), "-loop", "1", "-t", f"{dur:.3f}", "-i", str(p)]
         filters.append(
-            f"[{i}:v]scale=1080:1920,zoompan=z='min(zoom+0.0008,1.12)':d={frames}"
+            f"[{i}:v]scale=1080:1920,zoompan=z='min(1+0.0004*on,1.12)':d=1"
             f":x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':s=1080x1920:fps={FPS},setsar=1[v{i}]"
         )
     chain = "".join(f"[v{i}]" for i in range(len(pngs)))

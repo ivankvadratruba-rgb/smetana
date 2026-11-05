@@ -100,27 +100,33 @@ def wrap(draw, text, font, max_w):
 
 
 def line_overlay(text, path):
-    """Прозрачная плашка со строкой песни внизу кадра."""
-    img = Image.new("RGBA", (W, 420), (0, 0, 0, 0))
+    """Прозрачная плашка со строкой песни внизу кадра; шрифт подбирается, чтобы строка влезла целиком."""
+    img = Image.new("RGBA", (W, 460), (0, 0, 0, 0))
     d = ImageDraw.Draw(img)
-    font = ImageFont.truetype(FONT_BOLD, 64)
-    rows = wrap(d, text, font, W - 160)[:3]
-    h = 60 + 84 * len(rows)
-    top = (420 - h) // 2
+    for size in (64, 56, 50, 44):
+        font = ImageFont.truetype(FONT_BOLD, size)
+        rows = wrap(d, text, font, W - 160)
+        if len(rows) <= 3:
+            break
+    step = int(size * 1.32)
+    h = 56 + step * len(rows)
+    top = (460 - h) // 2
     d.rounded_rectangle((40, top, W - 40, top + h), radius=36, fill=(0, 0, 0, 150))
-    y = top + 30
+    y = top + 28
     for r in rows:
         w = d.textlength(r, font=font)
         d.text(((W - w) / 2, y), r, font=font, fill=(255, 255, 255, 255))
-        y += 84
+        y += step
     img.save(path)
 
 
 def label_overlay(date_text, path):
     img = Image.new("RGBA", (W, 130), (0, 0, 0, 0))
     d = ImageDraw.Draw(img)
-    f = ImageFont.truetype(FONT_REG, 36)
-    d.text((50, 50), f"НОВОСТИ ДНЯ  {date_text}   ·   иллюстрации созданы ИИ", font=f, fill=(255, 255, 255, 220))
+    y, m = date_text[:4], date_text[5:7]
+    day = date_text[8:10]
+    d.text((50, 30), f"НОВОСТИ В ТРЕКЕ  {day}.{m}.{y}", font=ImageFont.truetype(FONT_BOLD, 38), fill=(255, 255, 255, 235))
+    d.text((50, 80), "иллюстрации и музыка созданы ИИ", font=ImageFont.truetype(FONT_REG, 30), fill=(255, 255, 255, 190))
     img.save(path)
 
 
@@ -153,26 +159,26 @@ def build(news_path, lyrics_path, song_path, ts_path, out_path):
 
     inputs, filt = [], []
     for i, (p, d) in enumerate(zip(imgs, durs)):
-        inputs += ["-loop", "1", "-t", f"{d:.3f}", "-i", str(p)]
-        frames = max(1, int(d * FPS))
-        filt.append(f"[{i}:v]zoompan=z='min(zoom+0.0005,1.10)':d={frames}:x='iw/2-(iw/zoom/2)'"
+        inputs += ["-framerate", str(FPS), "-loop", "1", "-t", f"{d:.3f}", "-i", str(p)]
+        # d=1: один выходной кадр на каждый входной; плавное приближение по номеру кадра on
+        filt.append(f"[{i}:v]zoompan=z='min(1+0.0004*on,1.10)':d=1:x='iw/2-(iw/zoom/2)'"
                     f":y='ih/2-(ih/zoom/2)':s={W}x{H}:fps={FPS},setsar=1[v{i}]")
     n = len(imgs)
     filt.append("".join(f"[v{i}]" for i in range(n)) + f"concat=n={n}:v=1:a=0[base]")
 
     label = work / "label.png"
     label_overlay(news["date"], label)
-    inputs += ["-loop", "1", "-t", f"{total:.3f}", "-i", str(label)]
+    inputs += ["-framerate", str(FPS), "-loop", "1", "-t", f"{total:.3f}", "-i", str(label)]
     filt.append(f"[base][{n}:v]overlay=0:40[o0]")
     cur = "o0"
     for j, (txt, a, b) in enumerate(lines):
         png = work / f"line_{j:02d}.png"
         line_overlay(txt, png)
         k = n + 1 + j
-        inputs += ["-loop", "1", "-t", f"{total:.3f}", "-i", str(png)]
+        inputs += ["-framerate", str(FPS), "-loop", "1", "-t", f"{total:.3f}", "-i", str(png)]
         start = max(0.0, a - t0 - 0.05)
         end = (lines[j + 1][1] - t0 - 0.05) if j + 1 < len(lines) else (b - t0 + 1.0)
-        filt.append(f"[{cur}][{k}:v]overlay=0:{H - 520}:enable='between(t,{start:.2f},{end:.2f})'[o{j + 1}]")
+        filt.append(f"[{cur}][{k}:v]overlay=0:{H - 540}:enable='between(t,{start:.2f},{end:.2f})'[o{j + 1}]")
         cur = f"o{j + 1}"
     filt.append(f"[{cur}]fade=t=in:st=0:d=0.6,fade=t=out:st={total - 2:.2f}:d=2[vout]")
 

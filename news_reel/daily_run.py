@@ -30,7 +30,7 @@ MONTHS = rap.MONTHS
 
 def head_status(url):
     try:
-        req = urllib.request.Request(url, method="HEAD")
+        req = urllib.request.Request(url, method="HEAD", headers={"User-Agent": suno.UA})
         with urllib.request.urlopen(req, timeout=30) as r:
             return r.status
     except Exception:

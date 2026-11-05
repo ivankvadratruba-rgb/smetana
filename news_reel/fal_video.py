@@ -26,7 +26,7 @@ def load_key():
     if p.exists():
         for line in p.read_text(encoding="utf-8").splitlines():
             if line.startswith("FAL_KEY="):
-                os.environ["FAL_KEY"] = line.split("=", 1)[1].strip().strip('"')
+                os.environ["FAL_KEY"] = line.split("=", 1)[1].strip().strip('\'"')
                 return
     raise RuntimeError("нет FAL_KEY: нужен ключ в окружении или в " + ENV_FILE)
 

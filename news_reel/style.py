@@ -24,10 +24,11 @@ DEFAULT = {
                    "and black with one red accent",
     "suno_style": suno.STYLE,
     "lyrics_extra": "",
+    "scene_mood": "ночь, дождь, городские улицы",
     "cta": CTA,
     "hashtags": "",
 }
-KEYS = ["name", "image_style", "suno_style", "lyrics_extra", "cta", "hashtags"]
+KEYS = ["name", "image_style", "suno_style", "lyrics_extra", "scene_mood", "cta", "hashtags"]
 
 
 def load_history():
@@ -63,6 +64,7 @@ name: короткое название стиля по-русски;
 image_style: описание визуального стиля иллюстраций, английский, 1-2 предложения (палитра, техника, настроение); без людей, лиц, текста;
 suno_style: музыкальный стиль песни для Suno, английский (жанр, темп BPM, настроение, вокал, инструменты); текст песни по-русски;
 lyrics_extra: до 2 предложений по подаче куплетов (настроение, лексика, ритм), по-русски; факты менять нельзя, без мата;
+scene_mood: общий настрой сцен на день по-русски: время суток, места, ракурсы (например: яркий день, интерьеры и транспорт, крупные планы предметов); не повторяй настрой прошлых дней, ночные улицы и фонари не выбирай;
 cta: призыв к подписке одной фразой по-русски, можно новую формулировку;
 hashtags: 3-5 хэштегов через пробел, по теме, или пустая строка.
 
@@ -97,5 +99,6 @@ def next_style(h, trends=""):
 def apply(cfg):
     lyric_video.STYLE = cfg["image_style"].rstrip(". ") + ". " + IMG_SAFETY
     suno.STYLE = cfg["suno_style"]
+    lyric_video.SCENE_MOOD = cfg.get("scene_mood", "")
     base = rap.RULES.split("\nДополнительно по подаче:")[0]
     rap.RULES = base + (f"\nДополнительно по подаче: {cfg['lyrics_extra']}" if cfg["lyrics_extra"] else "")

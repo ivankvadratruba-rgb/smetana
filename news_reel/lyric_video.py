@@ -27,23 +27,37 @@ STYLE = ("Dark stylized editorial illustration, graphic novel noir, limited pale
          "with one red accent, vertical composition, no text, no letters, no numbers, no logos, no faces, "
          "no real people, no violence shown, no weapons, not photorealistic. Scene: ")
 
+SCENE_MOOD = ""     # время суток, место и ракурс сцен на сегодня; задаёт стиль дня (style.py)
+
 SCENE_RULES = (
-    "Для каждой новости придумай ОДНУ символическую сцену для тёмной иллюстрации, на английском, 1-2 предложения. "
+    "Для вступления, каждой новости и концовки клипа придумай по ОДНОЙ символической сцене для иллюстрации, "
+    "на английском, 1-2 предложения. Нужно ровно {n} сцен: первая для вступления (общий образ дня, "
+    "приветствие), затем по одной на каждую новость по порядку, последняя для концовки (прощание, завтра). "
     "Правила: без лиц и без конкретных людей (силуэты вдали допустимы); без текста, надписей и логотипов; "
-    "не показывай насилие, кровь, оружие, тела и жертв: для трагедий, атак и смертей используй сдержанную метафору "
-    "(пустая ночная дорога, свеча, тёмное небо, дождь за окном); не изображай реальных политиков и их символику; "
+    "не показывай насилие, кровь, оружие, тела и жертв: для трагедий, атак и смертей используй сдержанную "
+    "метафору (свеча, пустая дорога, опустевший предмет); не изображай реальных политиков и их символику; "
     "сцена должна ассоциироваться с темой новости, но не выглядеть как реальный кадр события. "
-    'Верни только JSON-массив строк той же длины и в том же порядке: ["scene 1", ...]'
+    "РАЗНООБРАЗИЕ: все сцены должны сильно отличаться друг от друга местом, предметами, ракурсом и временем суток. "
+    "Не повторяй одни и те же образы (особенно уличные фонари, ночные улицы, дождь, свечи), каждый образ "
+    "используй не больше одного раза за клип. Для обычных (не трагических) новостей бери разные дневные и "
+    "вечерние места, интерьеры, транспорт, природу, предметы и крупные планы. "
+    "Начинай вступление не с фонаря и не с ночной улицы. "
+    "{mood}"
+    'Верни только JSON-массив из {n} строк в том же порядке: ["scene 1", ...]'
 )
 
 
 def make_scenes(items):
+    """Сцены для вступления, всех новостей и концовки: len(items) + 2 штук."""
     src = [{"title": it["title"], "summary": it.get("summary", "")} for it in items]
+    n = len(items) + 2
+    mood = f"Общий настрой сцен на сегодня: {SCENE_MOOD}. " if SCENE_MOOD else ""
+    rules = SCENE_RULES.replace("{n}", str(n)).replace("{mood}", mood)
     for _ in range(3):
-        txt = call_openai(SCENE_RULES + "\n\nНовости:\n" + json.dumps(src, ensure_ascii=False), SCENE_MODEL)
+        txt = call_openai(rules + "\n\nНовости:\n" + json.dumps(src, ensure_ascii=False), SCENE_MODEL)
         try:
             arr = json.loads(txt[txt.find("["):txt.rfind("]") + 1])
-            if len(arr) == len(items) and all(isinstance(x, str) and x.strip() for x in arr):
+            if len(arr) == n and all(isinstance(x, str) and x.strip() for x in arr):
                 return arr
         except json.JSONDecodeError:
             pass
@@ -145,9 +159,7 @@ def build(news_path, lyrics_path, song_path, ts_path, out_path):
     if scenes_file.exists():
         scenes = json.loads(scenes_file.read_text(encoding="utf-8"))
     else:
-        scenes = ["an empty city street at night in the rain, lone streetlight, deep blue shadows"] + \
-                 make_scenes(news["items"]) + \
-                 ["a quiet city skyline at dawn after rain, a single red light on the horizon"]
+        scenes = make_scenes(news["items"])
         scenes_file.write_text(json.dumps(scenes, ensure_ascii=False, indent=2), encoding="utf-8")
     imgs = make_images(scenes, work)
 

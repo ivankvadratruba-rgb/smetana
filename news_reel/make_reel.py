@@ -4,6 +4,7 @@
 """
 import json
 import math
+import os
 import subprocess
 import sys
 from pathlib import Path
@@ -13,7 +14,8 @@ import build_video
 import cards
 import voice
 
-BPM = 96
+BPM = float(os.environ.get("BPM", "96"))
+MINUS_FILE = os.environ.get("MINUS_FILE")   # свой минус (файл с лицензией); BPM укажите в переменной BPM
 BAR = 4 * 60 / BPM          # длина такта, секунд
 LEAD, GAP, TAIL = 0.3, 0.25, 0.5
 
@@ -45,7 +47,13 @@ def plan_segments(news, lyr, work):
 
 
 def mix_audio(segs, total, work, beat_vol=0.35):
-    beat_path = beat.render(total + 0.5, bpm=BPM, path=str(work / "beat.wav"))
+    if MINUS_FILE:
+        beat_path = str(work / "minus_cut.wav")
+        subprocess.run(["ffmpeg", "-y", "-hide_banner", "-loglevel", "error", "-stream_loop", "-1",
+                        "-i", MINUS_FILE, "-t", f"{total + 0.5:.3f}", "-ac", "1", "-ar", "44100",
+                        beat_path], check=True)
+    else:
+        beat_path = beat.render(total + 0.5, bpm=BPM, path=str(work / "beat.wav"))
     clips = [c for s in segs for c in s["clips"]]
     inputs = ["-i", beat_path]
     for p, _ in clips:

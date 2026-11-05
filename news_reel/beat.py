@@ -67,7 +67,75 @@ def pluck(freqs, vol=0.16, dur=0.9):
     return vol * out / len(freqs) * np.exp(-t * 4.5) * np.minimum(1, t * 200)
 
 
-def render(seconds, bpm=96, path="out/beat.wav"):
+def pad(freqs, dur, vol=0.07):
+    """Длинный мрачный фон: слегка расстроенные синусы с медленным нарастанием."""
+    t = np.arange(int(dur * SR)) / SR
+    out = np.zeros_like(t)
+    for f in freqs:
+        for det in (-0.6, 0.0, 0.7):
+            out += np.sin(2 * np.pi * (f + det) * t) + 0.3 * np.sin(2 * np.pi * 2 * (f + det) * t)
+    env = np.minimum(1, t * 1.2) * np.minimum(1, (dur - t) * 2)
+    return vol * out / (len(freqs) * 3) * env
+
+
+def bell(freq, vol=0.1, dur=1.6):
+    """Печальная нота, похожая на пианино с дальним эхом."""
+    t = np.arange(int(dur * SR)) / SR
+    sig = (np.sin(2 * np.pi * freq * t) + 0.4 * np.sin(2 * np.pi * 2 * freq * t)
+           + 0.15 * np.sin(2 * np.pi * 3 * freq * t))
+    echo = np.zeros_like(sig)
+    d = int(0.375 * SR)
+    echo[d:] += 0.4 * sig[:-d]
+    return vol * (sig + echo) * np.exp(-t * 2.4) * np.minimum(1, t * 150)
+
+
+# Печальная прогрессия: Am, F, C, G -> такт на аккорд; корни басом и мелодия нотами
+SAD_ROOTS = [55.0, 43.65, 65.41, 49.0]
+SAD_PADS = [[110.0, 130.81, 164.81], [87.31, 110.0, 130.81], [130.81, 164.81, 196.0], [98.0, 123.47, 146.83]]
+SAD_MELODY = [[440.0, 392.0, 329.63], [349.23, 329.63, 261.63], [392.0, 329.63, 261.63], [392.0, 293.66, 246.94]]
+
+
+def render_sad(seconds, bpm=78, path="out/beat.wav"):
+    rng = np.random.default_rng(11)
+    n = int(seconds * SR)
+    buf = np.zeros(n + 2 * SR)
+    beat = 60.0 / bpm
+    step = beat / 4
+    bar = beat * 4
+    bars = int(seconds / bar) + 1
+    for b in range(bars):
+        t0 = b * bar
+        k = b % 4
+        for st in range(16):
+            t = t0 + st * step
+            if st in (0, 10):
+                _place(buf, kick(1.0 if st == 0 else 0.7), t)
+            if st == 8:
+                _place(buf, snare(rng, 0.55), t)
+            if st % 4 == 2:
+                _place(buf, hat(rng, 0.10), t)
+        _place(buf, sub(SAD_ROOTS[k], bar * 0.95, 0.85), t0)
+        _place(buf, pad(SAD_PADS[k], bar * 1.05), t0)
+        for i, off in enumerate((0, 3, 6)):
+            _place(buf, bell(SAD_MELODY[k][i], 0.11), t0 + off * beat * 0.5 + (0.1 if i else 0))
+    buf = buf[:n]
+    buf = np.tanh(1.25 * buf / max(1e-9, np.abs(buf).max())) * 0.85
+    os.makedirs(os.path.dirname(path) or ".", exist_ok=True)
+    with wave.open(path, "wb") as w:
+        w.setnchannels(1)
+        w.setsampwidth(2)
+        w.setframerate(SR)
+        w.writeframes((buf * 32767).astype("<i2").tobytes())
+    return path
+
+
+def render(seconds, bpm=96, path="out/beat.wav", mood=None):
+    if (mood or os.environ.get("BEAT_MOOD")) == "sad":
+        return render_sad(seconds, bpm, path)
+    return _render_default(seconds, bpm, path)
+
+
+def _render_default(seconds, bpm=96, path="out/beat.wav"):
     rng = np.random.default_rng(7)
     n = int(seconds * SR)
     buf = np.zeros(n + SR)
@@ -108,4 +176,5 @@ def render(seconds, bpm=96, path="out/beat.wav"):
 
 if __name__ == "__main__":
     print(render(float(sys.argv[1]) if len(sys.argv) > 1 else 20,
-                 float(sys.argv[2]) if len(sys.argv) > 2 else 96))
+                 float(sys.argv[2]) if len(sys.argv) > 2 else 96,
+                 mood=sys.argv[3] if len(sys.argv) > 3 else None))

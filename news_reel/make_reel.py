@@ -17,7 +17,31 @@ import voice
 BPM = float(os.environ.get("BPM", "96"))
 MINUS_FILE = os.environ.get("MINUS_FILE")   # свой минус (файл с лицензией); BPM укажите в переменной BPM
 BAR = 4 * 60 / BPM          # длина такта, секунд
-LEAD, GAP, TAIL = 0.3, 0.25, 0.5
+HALF_BAR = BAR / 2          # строки начинаются на сетке: каждые пол-такта
+MIN_RATIO, MAX_RATIO = 0.85, 1.25   # допустимое изменение темпа при подгонке строки под сетку
+
+
+def fit_to_grid(path, k=None):
+    """Обрезает тишину по краям и подгоняет длину строки под целое число пол-тактов.
+    Возвращает длительность после подгонки."""
+    src = Path(path)
+    trimmed = src.with_suffix(".trim.mp3")
+    sil = "silenceremove=start_periods=1:start_threshold=-45dB:start_silence=0.05"
+    subprocess.run(["ffmpeg", "-y", "-hide_banner", "-loglevel", "error", "-i", str(src), "-af",
+                    f"{sil},areverse,{sil},areverse", str(trimmed)], check=True)
+    d = voice.duration(trimmed)
+    n = max(1, round(d / HALF_BAR))
+    for cand in (n, n + 1, n - 1, n + 2):
+        if cand >= 1 and MIN_RATIO <= d / (cand * HALF_BAR) <= MAX_RATIO:
+            n = cand
+            break
+    target = n * HALF_BAR
+    ratio = min(MAX_RATIO, max(MIN_RATIO, d / target))
+    fitted = src.with_suffix(".fit.mp3")
+    subprocess.run(["ffmpeg", "-y", "-hide_banner", "-loglevel", "error", "-i", str(trimmed), "-af",
+                    f"atempo={ratio:.4f},apad=whole_dur={target:.3f}", "-t", f"{target:.3f}", str(fitted)],
+                   check=True)
+    return fitted, target
 
 
 def plan_segments(news, lyr, work):
@@ -34,15 +58,16 @@ def plan_segments(news, lyr, work):
                  "lines": [lyr["outro"]]})
 
     t = 0.0
-    for k, s in enumerate(segs):
-        pos, s["clips"] = LEAD, []
-        for j, line in enumerate(s["lines"]):
-            path = work / f"voice_{k:02d}_{j}.mp3"
-            d = voice.synth(line, path)
-            s["clips"].append((path, t + pos))
-            pos += d + GAP
-        s["dur"] = math.ceil((pos - GAP + TAIL) / BAR) * BAR
-        t += s["dur"]
+    for k, sg in enumerate(segs):
+        pos, sg["clips"] = 0.0, []
+        for j, line in enumerate(sg["lines"]):
+            raw = work / f"voice_{k:02d}_{j}.mp3"
+            voice.synth(line, raw)
+            fitted, target = fit_to_grid(raw)
+            sg["clips"].append((fitted, t + pos))
+            pos += target
+        sg["dur"] = pos
+        t += pos
     return segs, t
 
 

@@ -89,6 +89,8 @@ def main():
     msk = timezone(timedelta(hours=3))
     day = (datetime.strptime(args[0], "%Y-%m-%d").date() if args else datetime.now(msk).date())
     name = f"reel_{day.isoformat()}.mp4"
+    if "--force" in sys.argv:       # перевыпуск за ту же дату: новое имя файла, прежний не затираем
+        name = f"reel_{day.isoformat()}_{datetime.now(msk).strftime('%H%M')}.mp4"
 
     out = Path("out") / day.isoformat()
     out.mkdir(parents=True, exist_ok=True)

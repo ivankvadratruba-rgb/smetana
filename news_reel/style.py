@@ -42,6 +42,14 @@ def phase(day, h=None):
     return "experiment" if day.isoformat() < exp.get("end", EXPERIMENT_END) else "analysis"
 
 
+# Жёсткое правило по музыке: модель стиля может менять детали, но не уходить в поп.
+MUSIC_CORE = ("hard raw underground russian hip-hop, gritty dry heavy boom bap drums, dirty dusty sample, "
+              "low distorted 808 bass, deep gravelly male voice, aggressive hard rap delivery, "
+              "no chorus, no singing, no melody hooks, no autotune, dark and menacing, lo-fi")
+LYRICS_CORE = ("Подача: жёсткая, сухая, рубленая читка, короткие тяжёлые строки, мрачная ирония и злость, "
+               "без припева и без сладости, без мата и без призывов к насилию.")
+
+
 def load_history():
     raw = r2.get(HISTORY)
     if raw:
@@ -58,7 +66,8 @@ def save_history(h):
 
 def refresh_stats(h, last=14):
     for p in h["posts"][-last:]:
-        p["metrics"] = stats.media_metrics(p["media_id"])
+        if not p.get("deleted"):
+            p["metrics"] = stats.media_metrics(p["media_id"])
     h["followers"] = stats.followers()
 
 
@@ -68,6 +77,7 @@ PROMPT = """Ты редактор и аналитик Instagram-аккаунта
 ФАЗА: {phase_text}
 
 Правила анализа:
+- Поле owner_feedback это оценка владельца аккаунта, она важнее метрик: учти её и не повторяй отвергнутое.
 - Данных пока мало: аккаунт молодой, числа маленькие и шумные. Не делай жёстких выводов по одному ролику. Меняй за раз 1-2 элемента (так видно, что сработало) и каждый день пробуй новый стиль, не повторяя последние.
 - Смотри на досмотр (ig_reels_avg_watch_time, reels_skip_rate), репосты и сохранения важнее лайков. Если метрик ещё нет, опирайся на заметки о трендах и разнообразие.
 - Если какой-то стиль заметно лучше, развивай его, а не бросай.
@@ -78,7 +88,7 @@ variable: что именно ты меняешь сегодня относит�
 hypothesis: одна фраза, что ты ожидаешь от этого изменения и по какой метрике это проверим;
 name: короткое название стиля по-русски;
 image_style: описание визуального стиля иллюстраций, английский, 1-2 предложения (палитра, техника, настроение); без людей, лиц, текста;
-suno_style: музыкальный стиль песни для Suno, английский (жанр, темп BPM, настроение, вокал, инструменты); текст песни по-русски;
+suno_style: детали музыки для Suno, английский (темп BPM 80-100, семпл, ударные, бас, вокальная манера). ЖЁСТКОЕ ПРАВИЛО ВЛАДЕЛЬЦА: музыка только жёсткая, трушная, андеграундный хип-хоп (сухой тяжёлый бит, грязные семплы, хриплая агрессивная читка, мрачно); никакого попа, танцевальной и радио-музыки, мелодичных припевов и сладких синтов; имена артистов не использовать; текст песни по-русски;
 lyrics_extra: до 2 предложений по подаче куплетов (настроение, лексика, ритм), по-русски; факты менять нельзя, без мата;
 scene_mood: общий настрой сцен на день по-русски: время суток, места, ракурсы (например: яркий день, интерьеры и транспорт, крупные планы предметов); не повторяй настрой прошлых дней, ночные улицы и фонари не выбирай;
 cta: призыв к подписке одной фразой по-русски, можно новую формулировку;
@@ -111,7 +121,8 @@ def next_style(h, trends="", day=None):
     last = posts[-1]["style"] if posts else DEFAULT
     rotate = MOODS[len(posts) % len(MOODS)]       # запасной настрой сцен, если модель его не вернула
     brief = [{"date": p.get("date"), "style": {k: p["style"].get(k) for k in KEYS},
-              "metrics": p.get("metrics", {})} for p in posts[-10:]]
+              "metrics": p.get("metrics", {}), "owner_feedback": p.get("feedback"),
+              "deleted": p.get("deleted", False)} for p in posts[-10:]]
     q = PROMPT.format(phase_text=phase_text, trends=trends.strip() or "нет заметок", history=json.dumps(brief, ensure_ascii=False),
                       followers=h.get("followers", "?"))
     for _ in range(3):
@@ -141,7 +152,8 @@ def next_style(h, trends="", day=None):
 
 def apply(cfg):
     lyric_video.STYLE = cfg["image_style"].rstrip(". ") + ". " + IMG_SAFETY
-    suno.STYLE = cfg["suno_style"]
+    suno.STYLE = MUSIC_CORE + ", " + cfg["suno_style"]
     lyric_video.SCENE_MOOD = cfg.get("scene_mood", "")
     base = rap.RULES.split("\nДополнительно по подаче:")[0]
-    rap.RULES = base + (f"\nДополнительно по подаче: {cfg['lyrics_extra']}" if cfg["lyrics_extra"] else "")
+    extra = LYRICS_CORE + (" " + cfg["lyrics_extra"] if cfg["lyrics_extra"] else "")
+    rap.RULES = base + "\nДополнительно по подаче: " + extra

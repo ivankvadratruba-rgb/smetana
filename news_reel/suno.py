@@ -20,6 +20,8 @@ MODEL = os.environ.get("SUNO_MODEL", "V4_5")
 STYLE = os.environ.get("SUNO_STYLE", "dark russian boom bap rap, 96 BPM, melancholic, male vocal, "
                                       "minor key, sparse piano and vinyl crackle, calm delivery")
 TITLE = "Новости дня"
+NEGATIVE = ("pop, pop rap, mainstream, upbeat, cheerful, happy, dance, EDM, club, trap pop, autotune, "
+            "melodic chorus, singing, sing-song, bright synths, electronic, radio")
 UA = "smetana-news-reel/1.0"
 
 
@@ -44,7 +46,7 @@ def generate(lyr, out_dir, timeout=900):
     out.mkdir(parents=True, exist_ok=True)
     text, _ = align.build_song_text(lyr)
     task = call("generate", {"customMode": True, "instrumental": False, "model": MODEL, "prompt": text,
-                             "style": STYLE, "title": TITLE,
+                             "style": STYLE, "negativeTags": NEGATIVE, "title": TITLE,
                              "callBackUrl": "https://example.com/suno-callback"})["taskId"]
     t = time.time()
     track = None

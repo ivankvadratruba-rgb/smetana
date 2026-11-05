@@ -71,13 +71,24 @@ def make_caption(day, lyr, cfg=None):
     return head + lyrics_text(lyr)[:room].rstrip() + tail
 
 
+def retry(fn, tries=3, pause=20):
+    """Повторяет шаг при сбое сети или сервиса; после последней попытки ошибка пробрасывается."""
+    import time
+    for i in range(tries):
+        try:
+            return fn()
+        except Exception as e:
+            print(f"сбой шага {getattr(fn, '__name__', 'шаг')}: {e} (попытка {i + 1} из {tries})", flush=True)
+            if i == tries - 1:
+                raise
+            time.sleep(pause)
+
+
 def main():
     args = [a for i, a in enumerate(sys.argv[1:], 1) if not a.startswith("--") and sys.argv[i - 1] != "--trends"]
     msk = timezone(timedelta(hours=3))
     day = (datetime.strptime(args[0], "%Y-%m-%d").date() if args else datetime.now(msk).date())
     name = f"reel_{day.isoformat()}.mp4"
-    if head_status(f"{PUBLIC}/{name}") == 200 and "--force" not in sys.argv:
-        sys.exit(f"ролик за {day} уже есть в R2, повторно не делаю")
 
     out = Path("out") / day.isoformat()
     out.mkdir(parents=True, exist_ok=True)
@@ -86,13 +97,15 @@ def main():
     if "--trends" in sys.argv:
         tf = Path(sys.argv[sys.argv.index("--trends") + 1])
         trends = tf.read_text(encoding="utf-8") if tf.exists() else ""
-    hist = style.load_history()
+    hist = retry(style.load_history)
+    if any(p["date"] == day.isoformat() for p in hist["posts"]) and "--force" not in sys.argv:
+        sys.exit(f"рилс за {day} уже опубликован, повторно не делаю")
     style.refresh_stats(hist)
-    cfg = style.next_style(hist, trends)
+    cfg = style.next_style(hist, trends, day)
     style.apply(cfg)
-    print(f"стиль дня: {cfg['name']}\nпочему: {cfg['rationale']}", flush=True)
+    print(f"фаза: {style.phase(day, hist)}\nстиль дня: {cfg['name']}\nпеременная: {cfg.get('variable')}\nгипотеза: {cfg.get('hypothesis')}\nпочему: {cfg['rationale']}", flush=True)
 
-    items = telegram_source.collect(CHANNEL, day, 8)
+    items = retry(lambda: telegram_source.collect(CHANNEL, day, cfg.get("news_count", 8)))
     if len(items) < MIN_ITEMS:
         sys.exit(f"за {day} найдено {len(items)} новостей, нужно минимум {MIN_ITEMS}: выпуск пропущен")
     news = {"date": day.isoformat(), "items": paraphrase.paraphrase(items)}
@@ -104,7 +117,7 @@ def main():
     for k, v in lyr.get("flags", {}).items():
         print(f"пометка к куплету {k} (не блокирует): {v}")
 
-    mp3, ts = suno.generate(lyr, out)
+    mp3, ts = retry(lambda: suno.generate(lyr, out), tries=2, pause=30)
     video, total = lyric_video.build(out / "news_final.json", out / "lyrics.json", mp3, ts, out / "reel.mp4")
     print(f"видео готово: {total:.1f} с", flush=True)
 
@@ -112,11 +125,14 @@ def main():
         print("публикация отключена флагом --no-publish:", video)
         print("подпись была бы:\n" + make_caption(day, lyr, cfg))
         return
-    public = upload_r2(video, name)
+    public = retry(lambda: upload_r2(video, name))
     caption = make_caption(day, lyr, cfg)
     print("подпись:\n" + caption)
-    cid = instagram_publish.create_container(public, caption)
-    instagram_publish.wait_ready(cid)
+    def container():
+        c = instagram_publish.create_container(public, caption)
+        instagram_publish.wait_ready(c)
+        return c
+    cid = retry(container)
     media_id = instagram_publish.publish(cid)
     print("опубликовано, id:", media_id)
     hist["posts"].append({"date": day.isoformat(), "media_id": media_id, "style": cfg,

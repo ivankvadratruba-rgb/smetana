@@ -31,6 +31,17 @@ DEFAULT = {
 KEYS = ["name", "image_style", "suno_style", "lyrics_extra", "scene_mood", "cta", "hashtags"]
 
 
+EXPERIMENT_START = "2026-11-05"
+EXPERIMENT_END = "2026-12-05"     # месяц экспериментов с форматом, потом режим анализа и закрепления лучшего
+EXTRA = ["variable", "hypothesis"]
+
+
+def phase(day, h=None):
+    """experiment (идут эксперименты) или analysis (месяц прошёл: анализ и закрепление лучшего)."""
+    exp = (h or {}).get("experiment") or {}
+    return "experiment" if day.isoformat() < exp.get("end", EXPERIMENT_END) else "analysis"
+
+
 def load_history():
     raw = r2.get(HISTORY)
     if raw:
@@ -54,12 +65,17 @@ def refresh_stats(h, last=14):
 PROMPT = """Ты редактор и аналитик Instagram-аккаунта новостных рилсов «Новости в треке»: каждый день новая песня (рэп по новостям дня), иллюстрации; в подписи стоят дата, текст песни и призыв к подписке.
 Твоя задача: выбрать стиль завтрашнего выпуска так, чтобы расти по просмотрам, досмотрам, репостам, сохранениям и подпискам.
 
+ФАЗА: {phase_text}
+
 Правила анализа:
 - Данных пока мало: аккаунт молодой, числа маленькие и шумные. Не делай жёстких выводов по одному ролику. Меняй за раз 1-2 элемента (так видно, что сработало) и каждый день пробуй новый стиль, не повторяя последние.
 - Смотри на досмотр (ig_reels_avg_watch_time, reels_skip_rate), репосты и сохранения важнее лайков. Если метрик ещё нет, опирайся на заметки о трендах и разнообразие.
 - Если какой-то стиль заметно лучше, развивай его, а не бросай.
 
 Можно менять только эти поля (всё остальное зафиксировано):
+news_count: целое число от 4 до 8, сколько новостей взять в выпуск (длина ролика: 4 новости примерно 35 секунд, 8 примерно 60-75);
+variable: что именно ты меняешь сегодня относительно прошлого выпуска (одно-два слова, например: жанр, визуал, длина, настрой сцен, подача текста, призыв);
+hypothesis: одна фраза, что ты ожидаешь от этого изменения и по какой метрике это проверим;
 name: короткое название стиля по-русски;
 image_style: описание визуального стиля иллюстраций, английский, 1-2 предложения (палитра, техника, настроение); без людей, лиц, текста;
 suno_style: музыкальный стиль песни для Suno, английский (жанр, темп BPM, настроение, вокал, инструменты); текст песни по-русски;
@@ -76,7 +92,7 @@ hashtags: 3-5 хэштегов через пробел, по теме, или п
 
 Подписчиков сейчас: {followers}.
 
-Верни только JSON с полями name, image_style, suno_style, lyrics_extra, scene_mood, cta, hashtags и ещё rationale (2-3 предложения по-русски: что показала статистика и почему выбран этот стиль)."""
+Верни только JSON с полями name, image_style, suno_style, lyrics_extra, scene_mood, cta, hashtags и ещё news_count, variable, hypothesis и rationale (2-3 предложения по-русски: что показала статистика и почему выбран этот стиль)."""
 
 
 MOODS = ["яркий день, интерьеры, транспорт, крупные планы предметов",
@@ -86,13 +102,17 @@ MOODS = ["яркий день, интерьеры, транспорт, круп�
          "пасмурный день, архитектура, необычные ракурсы сверху"]
 
 
-def next_style(h, trends=""):
+def next_style(h, trends="", day=None):
+    from datetime import date
+    day = day or date.today()
+    exp_end = (h.get("experiment") or {}).get("end", EXPERIMENT_END)
+    phase_text = ("ЭКСПЕРИМЕНТЫ (первый месяц, до {end}). Цель: найти формат, который работает. Меняй за раз одну главную переменную (variable), чтобы потом можно было сравнить; не повторяй уже проверенные комбинации; пробуй разные жанры, визуал, длину, подачу, призыв. Записывай гипотезу.".format(end=exp_end) if phase(day, h) == "experiment" else "АНАЛИЗ (эксперименты закончены). Цель: закрепить лучшее. Сравни стили по досмотру, репостам, сохранениям и подпискам, выбери лучшие, лишь слегка варьируй их (по одной мелочи за раз), не возвращайся к слабым. В rationale напиши вывод: что сработало, что нет.")
     posts = h["posts"]
     last = posts[-1]["style"] if posts else DEFAULT
     rotate = MOODS[len(posts) % len(MOODS)]       # запасной настрой сцен, если модель его не вернула
     brief = [{"date": p.get("date"), "style": {k: p["style"].get(k) for k in KEYS},
               "metrics": p.get("metrics", {})} for p in posts[-10:]]
-    q = PROMPT.format(trends=trends.strip() or "нет заметок", history=json.dumps(brief, ensure_ascii=False),
+    q = PROMPT.format(phase_text=phase_text, trends=trends.strip() or "нет заметок", history=json.dumps(brief, ensure_ascii=False),
                       followers=h.get("followers", "?"))
     for _ in range(3):
         try:
@@ -109,8 +129,14 @@ def next_style(h, trends=""):
                for k in KEYS if k != "hashtags"}
         cfg["hashtags"] = d["hashtags"].strip() if isinstance(d.get("hashtags"), str) else ""
         cfg["rationale"] = str(d.get("rationale", "")).strip()
+        cfg["variable"] = str(d.get("variable", "")).strip()
+        cfg["hypothesis"] = str(d.get("hypothesis", "")).strip()
+        try:
+            cfg["news_count"] = max(4, min(8, int(d.get("news_count", 8))))
+        except (TypeError, ValueError):
+            cfg["news_count"] = 8
         return cfg
-    return dict(last, scene_mood=rotate, rationale="модель не ответила, стиль прошлого дня с новым настроем сцен")
+    return dict(last, scene_mood=rotate, news_count=last.get("news_count", 8), variable="настрой сцен", hypothesis="", rationale="модель не ответила, стиль прошлого дня с новым настроем сцен")
 
 
 def apply(cfg):

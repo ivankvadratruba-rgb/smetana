@@ -57,6 +57,11 @@ def avatar_clip(image, audio, out, prompt=None, go=False):
     if prompt:
         args["prompt"] = prompt
     result = fal_client.subscribe(MODEL, arguments=args)    # один вызов = одно платное задание, не повторять вслепую
+    try:
+        import ledger
+        ledger.fal("omnihuman", result.get("duration") or sec, (result.get("duration") or sec) * PRICE_PER_SEC)
+    except Exception:
+        pass
     url = result["video"]["url"]
     Path(out).parent.mkdir(parents=True, exist_ok=True)
     with urllib.request.urlopen(urllib.request.Request(url, headers={"User-Agent": "smetana-news-reel/1.0"}),

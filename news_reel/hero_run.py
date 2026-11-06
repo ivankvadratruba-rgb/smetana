@@ -113,6 +113,11 @@ def gen_keyframe_fal(scene, dst):
         "prompt": "Use the person from the reference images as the exact same man (identical face, shaved head, "
                   "mustache, earring, navy fur coat, white shirt, black tie). " + KEYFRAME.format(scene=scene),
         "image_urls": _FAL_REFS, "aspect_ratio": "2:3", "output_format": "png", "num_images": 1})
+    try:
+        import ledger
+        ledger.fal("nano-banana", 1, 0.0398)
+    except Exception:
+        pass
     url = res["images"][0]["url"]
     data = urllib.request.urlopen(urllib.request.Request(url, headers={"User-Agent": UA}), timeout=120).read()
     Path(dst).write_bytes(data)
@@ -129,6 +134,11 @@ def gen_keyframe(scene, dst):
         print("OpenAI без кредитов, кадр через fal")
         return gen_keyframe_fal(scene, dst)
     r.raise_for_status()
+    try:
+        import ledger
+        ledger.openai("gpt-image-2", r.json().get("usage"))
+    except Exception:
+        pass
     Path(dst).write_bytes(base64.b64decode(r.json()["data"][0]["b64_json"]))
 
 
@@ -281,3 +291,5 @@ if __name__ == "__main__":
     for name in (STAGES if a[1] == "all" else [a[1]]):
         print(f"== {name} ==", flush=True)
         STAGES[name](day, work)
+    import ledger
+    ledger.flush()

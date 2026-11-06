@@ -74,6 +74,11 @@ def gen_image(scene, path):
     req = urllib.request.Request("https://api.openai.com/v1/images/generations", data=body, headers=headers)
     with urllib.request.urlopen(req, timeout=150) as r:
         d = json.loads(r.read())
+    try:
+        import ledger
+        ledger.openai(IMAGE_MODEL, d.get("usage"))
+    except Exception:
+        pass
     raw = Path(path).with_suffix(".raw.png")
     raw.write_bytes(base64.b64decode(d["data"][0]["b64_json"]))
     im = Image.open(raw).convert("RGB")

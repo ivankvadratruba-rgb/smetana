@@ -74,6 +74,11 @@ def call_openai(prompt, model=None):
     req = urllib.request.Request(OPENAI_URL, data=body, headers=headers)
     with urllib.request.urlopen(req, timeout=180) as r:
         data = json.loads(r.read().decode("utf-8"))
+    try:
+        import ledger
+        ledger.openai(model, data.get("usage"))
+    except Exception:
+        pass
     return data["choices"][0]["message"]["content"]
 
 

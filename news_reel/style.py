@@ -44,7 +44,7 @@ def phase(day, h=None):
 
 # Жёсткое правило по музыке: модель стиля может менять детали, но не уходить в поп.
 MUSIC_CORE = ("hard raw underground russian hip-hop, gritty dry heavy drums, dirty dusty sample, "
-              "low distorted 808 bass, deep gravelly male voice, fast aggressive punchy street rap flow, "
+              "low 808 bass, clear articulate mid-range male voice, natural not too deep, no heavy rasp, no growl, fast aggressive punchy street rap flow, "
               "shouted ad-libs, raw energy, no chorus, no singing, no melody hooks, no autotune, "
               "dark and menacing, lo-fi")
 LYRICS_CORE = ("Подача: жёсткая, быстрая, агрессивная уличная читка, короткие рубленые тяжёлые строки, злая "

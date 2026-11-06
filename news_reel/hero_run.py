@@ -136,7 +136,7 @@ def segments(work, lyr, ts):
     """Границы сегментов: вступление, каждая новость, концовка. Возвращает (t0, t_end, [(начало, конец)])."""
     g = align.group_times(lyr, ts)
     t0 = max(0.0, g[0][0] - 1.5)
-    t_end = g[-1][1] + 3.0
+    t_end = g[-1][1] + 0.7     # сразу после последнего слова: дальше модель шевелит ртом в тишине
     cuts = [t0] + [(g[i - 1][1] + g[i][0]) / 2 for i in range(1, len(g))] + [t_end]
     return t0, t_end, [(cuts[i], cuts[i + 1]) for i in range(len(g))]
 
@@ -257,10 +257,10 @@ def stage_assemble(day, work):
         end = (lines[j + 1][1] - t0 - 0.05) if j + 1 < len(lines) else (b - t0 + 1.0)
         filt.append(f"[{cur}][{k}:v]overlay=0:{H - 540}:enable='between(t,{start:.2f},{end:.2f})'[o{j + 1}]")
         cur = f"o{j + 1}"
-    filt.append(f"[{cur}]fade=t=in:st=0:d=0.5,fade=t=out:st={total - 1.5:.2f}:d=1.5[vout]")
+    filt.append(f"[{cur}]fade=t=in:st=0:d=0.5,fade=t=out:st={total - 0.8:.2f}:d=0.8[vout]")
     a_idx = n + 1 + len(lines)
     inputs += ["-ss", f"{t0:.3f}", "-t", f"{total:.3f}", "-i", str(work / "suno_1.mp3")]
-    filt.append(f"[{a_idx}:a]afade=t=out:st={total - 2.5:.2f}:d=2.5,loudnorm=I=-14:TP=-1.5[aout]")
+    filt.append(f"[{a_idx}:a]afade=t=out:st={total - 1.2:.2f}:d=1.2,loudnorm=I=-14:TP=-1.5[aout]")
     out = work / "reel_hero.mp4"
     subprocess.run(["ffmpeg", "-y", "-hide_banner", "-loglevel", "error", *inputs, "-filter_complex", ";".join(filt),
                     "-map", "[vout]", "-map", "[aout]", "-t", f"{total:.3f}", "-c:v", "libx264", "-pix_fmt", "yuv420p",

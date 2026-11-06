@@ -54,8 +54,8 @@ KEYFRAME = (
     "Photorealistic cinematic vertical 9:16 frame, shot on a full-frame camera, natural light, fine film grain. "
     "The exact same man as in the reference images (identical face, shaved head, handlebar mustache, silver hoop "
     "earring, white shirt, thin black tie, oversized dark navy fur coat) walking slowly toward the camera, "
-    "WAIST-UP medium shot, his face large, sharp and well lit in the upper third of the frame, looking straight "
-    "into the camera with an intense stern expression, mouth slightly open mid-rap. {scene} "
+    "TIGHT chest-up medium close-up cropped at his belt, head and shoulders fill most of the frame, his face is large "
+    "(at least a quarter of the frame height), sharp and well lit, looking straight into the camera with an intense stern expression, mouth slightly open mid-rap. {scene} "
     "No other people in focus, no text, no logos, no flags with symbols, no ropes or loops."
 )
 CLIP_PROMPT = (
@@ -100,11 +100,34 @@ def scene_brief(item):
     return "Setting: " + r["choices"][0]["message"]["content"].strip()
 
 
+_FAL_REFS = []
+
+
+def gen_keyframe_fal(scene, dst):
+    """Запасной путь: кадр героя через fal (nano-banana/edit, 0,04 доллара за кадр), если OpenAI недоступен."""
+    import fal_client
+    fal_video.load_key()
+    if not _FAL_REFS:
+        _FAL_REFS.extend(fal_client.upload_file(p) for p in REFS)
+    res = fal_client.subscribe("fal-ai/nano-banana/edit", arguments={
+        "prompt": "Use the person from the reference images as the exact same man (identical face, shaved head, "
+                  "mustache, earring, navy fur coat, white shirt, black tie). " + KEYFRAME.format(scene=scene),
+        "image_urls": _FAL_REFS, "aspect_ratio": "2:3", "output_format": "png", "num_images": 1})
+    url = res["images"][0]["url"]
+    data = urllib.request.urlopen(urllib.request.Request(url, headers={"User-Agent": UA}), timeout=120).read()
+    Path(dst).write_bytes(data)
+
+
 def gen_keyframe(scene, dst):
+    if os.environ.get("HERO_IMAGE_PROVIDER") == "fal":
+        return gen_keyframe_fal(scene, dst)
     files = [("image[]", (Path(p).name, Path(p).read_bytes(), "image/png")) for p in REFS]
     r = httpx.post("https://api.openai.com/v1/images/edits", headers={"User-Agent": UA}, timeout=290, files=files,
                    data={"model": "gpt-image-2", "prompt": KEYFRAME.format(scene=scene), "size": "1024x1536",
                          "quality": "medium", "n": "1"})
+    if r.status_code == 429 and "credit_balance_exhausted" in r.text:   # на OpenAI нет кредитов: рисуем через fal
+        print("OpenAI без кредитов, кадр через fal")
+        return gen_keyframe_fal(scene, dst)
     r.raise_for_status()
     Path(dst).write_bytes(base64.b64decode(r.json()["data"][0]["b64_json"]))
 

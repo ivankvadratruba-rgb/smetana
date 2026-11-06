@@ -34,9 +34,20 @@ def call(path, data=None):
         raise SystemExit(f"Instagram вернул {e.code}: {e.read().decode()[:400]}")
 
 
-def create_container(video_url, caption):
-    return call(f"{IG_ID}/media", {"media_type": "REELS", "video_url": video_url,
-                                   "caption": caption, "share_to_feed": "true"})["id"]
+THUMB_OFFSET_MS = 2500    # обложка рилса: кадр с 2,5-й секунды (первый кадр у наших видео чёрный из-за плавного появления)
+
+
+def create_container(video_url, caption, thumb_offset=THUMB_OFFSET_MS):
+    data = {"media_type": "REELS", "video_url": video_url, "caption": caption, "share_to_feed": "true"}
+    if thumb_offset:
+        data["thumb_offset"] = str(int(thumb_offset))
+    try:
+        return call(f"{IG_ID}/media", data)["id"]
+    except SystemExit as e:
+        if thumb_offset and "thumb" in str(e).lower():      # если параметр обложки отклонён, публикуем без него
+            data.pop("thumb_offset")
+            return call(f"{IG_ID}/media", data)["id"]
+        raise
 
 
 def create_story_container(video_url):

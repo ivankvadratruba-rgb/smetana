@@ -42,7 +42,7 @@ FAL_BUDGET = float(os.environ.get("FAL_BUDGET", "8"))
 REFS = ["character/front_waist.png", "character/full_body.png"]
 SUNO_DETAILS = "90 BPM, dusty dark sample, hard dry drums, fast aggressive punchy flow, clear articulate mid-range male voice, natural and not too deep, no heavy rasp"
 W, H, FPS = 1080, 1920, 30
-LABEL_Y = 260     # дата ниже верхней панели Instagram (имя аккаунта и время)
+LABEL_Y = 1060    # у героя лицо наверху кадра: дату ставим над строкой текста, ниже груди (сверху её закрыл бы интерфейс Instagram)
 LINE_Y = H - 800   # строки текста выше подписи рилса и панели ответа сторис
 
 BRIEF_RULES = (

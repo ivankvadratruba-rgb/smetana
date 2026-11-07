@@ -75,13 +75,26 @@ def check(item, lines):
     return bool(d.get("ok")), str(d.get("problem", ""))
 
 
+import re
+
+# Чувствительные новости: гибель людей, насилие, теракты. В таких куплетах мата не должно быть вообще.
+SENSITIVE = re.compile(r"(?i)(убит|убий|погиб|гибел|смерт|труп|жертв|теракт|стрельб|стрелял|стреляли|взрыв|ранен|насили|избил|скончал|умер)")
+MAT = re.compile(r"(?i)(х[уy][йяеёию]\w*|пизд\w*|\bбля\w*|[её]бан\w*|[её]бат\w*|\bнах[уy]й\w*|ах[уy][еёи]\w*|\bсука\b)")
+
+
 def one_couplet(item, tries=4):
     """Пишет куплет, проверяет, при ошибке переписывает с замечанием. Возвращает (строки, замечание или '')."""
     note, lines, problem = "", None, ""
+    sens = bool(SENSITIVE.search(item["title"] + " " + item.get("summary", "")))
     for _ in range(tries):
         q = build_prompt(item) + (f"\n\nПрошлая попытка была отклонена: {note}. Исправь." if note else "")
+        if sens:
+            q += "\n\nЭТО НОВОСТЬ ПРО ГИБЕЛЬ ЛЮДЕЙ ИЛИ НАСИЛИЕ: в куплете ни одного бранного слова, никаких шуток и оценок вроде «классика», тон сдержанный."
         try:
             lines = parse(call_openai(q, RAP_MODEL))
+            if sens and MAT.search(" ".join(lines)):
+                note = "в куплете про гибель людей есть мат, перепиши полностью без мата и без шуток"
+                continue
             ok, problem = check(item, lines)
         except (ValueError, KeyError, json.JSONDecodeError):
             continue
@@ -90,6 +103,8 @@ def one_couplet(item, tries=4):
         note = problem
     if lines is None:
         raise RuntimeError(f"не вышло написать куплет для «{item['title']}»")
+    if sens and MAT.search(" ".join(lines)):      # последняя страховка: вычищаем мат из куплета про гибель людей
+        lines = [re.sub(r"\s{2,}", " ", MAT.sub("", l)).strip(" ,—-") for l in lines]
     return lines, problem or "не прошёл проверку"
 
 

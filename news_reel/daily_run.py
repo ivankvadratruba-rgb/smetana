@@ -118,6 +118,19 @@ def post_story(video, name):
     return ids
 
 
+def dedupe(items, limit):
+    """Убирает новости об одном событии: три и больше общих основ слов в заголовках."""
+    import re
+    words = lambda t: {w[:5] for w in re.findall(r"[а-яёa-z0-9]{5,}", t.lower())}   # основы слов: стрельба и стрельбу совпадут
+    out = []
+    for it in items:
+        w = words(it["title"])
+        if any(len(w & words(o["title"])) >= 3 for o in out):
+            continue
+        out.append(it)
+    return out[-limit:]
+
+
 def main():
     args = [a for i, a in enumerate(sys.argv[1:], 1) if not a.startswith("--") and sys.argv[i - 1] != "--trends"]
     msk = timezone(timedelta(hours=3))
@@ -141,7 +154,8 @@ def main():
     style.apply(cfg)
     print(f"фаза: {style.phase(day, hist)}\nстиль дня: {cfg['name']}\nпеременная: {cfg.get('variable')}\nгипотеза: {cfg.get('hypothesis')}\nпочему: {cfg['rationale']}", flush=True)
 
-    items = retry(lambda: telegram_source.collect(CHANNEL, day, cfg.get("news_count", 8)))
+    want = cfg.get("news_count", 8)
+    items = dedupe(retry(lambda: telegram_source.collect(CHANNEL, day, want + 4)), want)
     if len(items) < MIN_ITEMS:
         sys.exit(f"за {day} найдено {len(items)} новостей, нужно минимум {MIN_ITEMS}: выпуск пропущен")
     news = {"date": day.isoformat(), "items": paraphrase.paraphrase(items)}

@@ -28,6 +28,9 @@ def load_key():
             if line.startswith("FAL_KEY="):
                 os.environ["FAL_KEY"] = line.split("=", 1)[1].strip().strip('\'"')
                 return
+    if os.environ.get("FAL_PROXY_KEY", "1") == "1":    # ключ подставляет прокси сессии (секрет окружения для адресов fal)
+        os.environ["FAL_KEY"] = "proxy-injected"
+        return
     raise RuntimeError("нет FAL_KEY: нужен ключ в окружении или в " + ENV_FILE)
 
 

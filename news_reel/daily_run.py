@@ -167,9 +167,25 @@ def main():
     for k, v in lyr.get("flags", {}).items():
         print(f"пометка к куплету {k} (не блокирует): {v}")
 
-    mp3, ts = retry(lambda: suno.generate(lyr, out), tries=2, pause=30)
-    video, total = lyric_video.build(out / "news_final.json", out / "lyrics.json", mp3, ts, out / "reel.mp4")
-    print(f"видео готово: {total:.1f} с", flush=True)
+    video = None
+    if os.environ.get("HERO", "1") == "1":      # основной формат: герой сам читает трек (hero_run.py)
+        try:
+            import hero_run
+            hero_run.stage_prep(day, out)        # песня и чистый вокал (тексты и новости уже записаны)
+            hero_run.stage_frames(day, out)
+            hero_run.stage_animate(day, out)
+            hero_run.stage_assemble(day, out)
+            video = out / "reel_hero.mp4"
+            cfg = dict(cfg, name="герой-ведущий", variable="герой в автозапуске")
+            print("видео с героем готово", flush=True)
+        except BaseException as e:               # SystemExit тоже: превышен лимит расходов и подобное
+            print("герой не получился, делаю обычный ролик:", repr(e)[:300], flush=True)
+    if video is None:
+        mp3, ts = out / "suno_1.mp3", out / "suno_1_ts.json"
+        if not (mp3.exists() and ts.exists()):
+            mp3, ts = retry(lambda: suno.generate(lyr, out), tries=2, pause=30)
+        video, total = lyric_video.build(out / "news_final.json", out / "lyrics.json", mp3, ts, out / "reel.mp4")
+        print(f"видео готово: {total:.1f} с", flush=True)
 
     if "--no-publish" in sys.argv:
         print("публикация отключена флагом --no-publish:", video)

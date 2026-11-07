@@ -160,7 +160,8 @@ def cut_audio(src, a, b, dst):
 def stage_prep(day, work):
     news_f, lyr_f = work / "news_final.json", work / "lyrics.json"
     if not news_f.exists():
-        items = telegram_source.collect(CHANNEL, day, NEWS_COUNT)
+        from daily_run import dedupe
+        items = dedupe(telegram_source.collect(CHANNEL, day, NEWS_COUNT + 4), NEWS_COUNT)
         if len(items) < 4:
             sys.exit(f"за {day} найдено {len(items)} новостей, нужно минимум 4")
         news_f.write_text(json.dumps({"date": day.isoformat(), "items": paraphrase.paraphrase(items)},

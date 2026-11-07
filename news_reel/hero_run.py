@@ -42,6 +42,8 @@ FAL_BUDGET = float(os.environ.get("FAL_BUDGET", "8"))
 REFS = ["character/front_waist.png", "character/full_body.png"]
 SUNO_DETAILS = "90 BPM, dusty dark sample, hard dry drums, fast aggressive punchy flow, clear articulate mid-range male voice, natural and not too deep, no heavy rasp"
 W, H, FPS = 1080, 1920, 30
+LABEL_Y = 260     # дата ниже верхней панели Instagram (имя аккаунта и время)
+LINE_Y = H - 800   # строки текста выше подписи рилса и панели ответа сторис
 
 BRIEF_RULES = (
     "Опиши ОБСТАНОВКУ для художника: место, время суток, погода, ключевые предметы, цвета, атмосфера. "
@@ -257,7 +259,7 @@ def stage_assemble(day, work):
     label = work / "label.png"
     lyric_video.label_overlay(news["date"], label)
     inputs += ["-framerate", str(FPS), "-loop", "1", "-t", f"{total:.3f}", "-i", str(label)]
-    filt.append(f"[base][{n}:v]overlay=0:40[o0]")
+    filt.append(f"[base][{n}:v]overlay=0:{LABEL_Y}[o0]")
     cur = "o0"
     for j, (txt, a, b) in enumerate(lines):
         png = work / f"line_{j:02d}.png"
@@ -266,7 +268,7 @@ def stage_assemble(day, work):
         inputs += ["-framerate", str(FPS), "-loop", "1", "-t", f"{total:.3f}", "-i", str(png)]
         start = max(0.0, a - t0 - 0.05)
         end = (lines[j + 1][1] - t0 - 0.05) if j + 1 < len(lines) else (b - t0 + 1.0)
-        filt.append(f"[{cur}][{k}:v]overlay=0:{H - 540}:enable='between(t,{start:.2f},{end:.2f})'[o{j + 1}]")
+        filt.append(f"[{cur}][{k}:v]overlay=0:{LINE_Y}:enable='between(t,{start:.2f},{end:.2f})'[o{j + 1}]")
         cur = f"o{j + 1}"
     filt.append(f"[{cur}]fade=t=in:st=0:d=0.5,fade=t=out:st={total - 0.8:.2f}:d=0.8[vout]")
     a_idx = n + 1 + len(lines)

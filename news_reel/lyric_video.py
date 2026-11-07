@@ -19,6 +19,8 @@ import align
 from paraphrase import call_openai
 
 W, H, FPS = 1080, 1920, 30
+LABEL_Y = 260     # дата ниже верхней панели Instagram (имя аккаунта и время)
+LINE_Y = H - 800   # строки текста выше подписи рилса и панели ответа сторис
 IMAGE_MODEL = os.environ.get("IMAGE_MODEL", "gpt-image-2")
 SCENE_MODEL = os.environ.get("SCENE_MODEL", "gpt-4.1")
 FONT_BOLD = "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"
@@ -184,7 +186,7 @@ def build(news_path, lyrics_path, song_path, ts_path, out_path):
     label = work / "label.png"
     label_overlay(news["date"], label)
     inputs += ["-framerate", str(FPS), "-loop", "1", "-t", f"{total:.3f}", "-i", str(label)]
-    filt.append(f"[base][{n}:v]overlay=0:40[o0]")
+    filt.append(f"[base][{n}:v]overlay=0:{LABEL_Y}[o0]")
     cur = "o0"
     for j, (txt, a, b) in enumerate(lines):
         png = work / f"line_{j:02d}.png"
@@ -193,7 +195,7 @@ def build(news_path, lyrics_path, song_path, ts_path, out_path):
         inputs += ["-framerate", str(FPS), "-loop", "1", "-t", f"{total:.3f}", "-i", str(png)]
         start = max(0.0, a - t0 - 0.05)
         end = (lines[j + 1][1] - t0 - 0.05) if j + 1 < len(lines) else (b - t0 + 1.0)
-        filt.append(f"[{cur}][{k}:v]overlay=0:{H - 540}:enable='between(t,{start:.2f},{end:.2f})'[o{j + 1}]")
+        filt.append(f"[{cur}][{k}:v]overlay=0:{LINE_Y}:enable='between(t,{start:.2f},{end:.2f})'[o{j + 1}]")
         cur = f"o{j + 1}"
     filt.append(f"[{cur}]fade=t=in:st=0:d=0.6,fade=t=out:st={total - 2:.2f}:d=2[vout]")
 

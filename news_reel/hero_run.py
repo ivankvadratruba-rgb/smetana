@@ -520,7 +520,7 @@ def stage_assemble(day, work):
     inputs += ["-ss", f"{t0:.3f}", "-t", f"{main_total:.3f}", "-i", str(work / "suno_1.mp3")]
     filt.append(f"[{idx}:a]afade=t=in:st=0:d=0.15[ma]" if hook else f"[{idx}:a]anull[ma]")
     audio_inputs.append("[ma]")
-    filt.append("".join(audio_inputs) + f"concat=n={len(audio_inputs)}:v=0:a=1,afade=t=out:st={total - 1.2:.2f}:d=1.2,loudnorm=I=-14:TP=-1.5,aresample=48000:first_pts=0[aout]")
+    filt.append("".join(audio_inputs) + f"concat=n={len(audio_inputs)}:v=0:a=1,afade=t=out:st={total - 1.2:.2f}:d=1.2,loudnorm=I=-14:TP=-1.5,aresample=48000[aout]")
     out = work / "reel_hero.mp4"
     subprocess.run(["ffmpeg", "-y", "-hide_banner", "-loglevel", "error", *inputs, "-filter_complex", ";".join(filt),
                     "-map", "[vout]", "-map", "[aout]", "-t", f"{total:.3f}", "-c:v", "libx264", "-pix_fmt", "yuv420p",

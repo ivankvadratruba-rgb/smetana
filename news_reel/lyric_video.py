@@ -145,7 +145,7 @@ def label_overlay(date_text, path):
     d = ImageDraw.Draw(img)
     y, m = date_text[:4], date_text[5:7]
     day = date_text[8:10]
-    d.text((50, 30), f"НОВОСТИ В ТРЕКЕ  {day}.{m}.{y}", font=ImageFont.truetype(FONT_BOLD, 38), fill=(255, 255, 255, 235))
+    d.text((50, 30), f"Новости в треке  {day}.{m}.{y}", font=ImageFont.truetype(FONT_BOLD, 38), fill=(255, 255, 255, 235))
     img.save(path)
 
 

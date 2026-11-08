@@ -113,7 +113,7 @@ CAMERA_MOVES = ["the camera slowly orbits around him from left to right while he
                 "the camera pulls back and sweeps to the right"]
 HOOK_RULES = (
     "Из новостей выбери одну самую цепляющую для крючка в начале ролика и придумай экранный текст крючка: до 7 слов, "
-    "заглавными буквами, по-русски, только факты из заголовка и без мата. Для новостей про гибель, насилие, политиков и "
+    "обычным предложением с заглавной буквы в начале (НЕ капслоком), по-русски, только факты из заголовка и без мата. Для новостей про гибель, насилие, политиков и "
     'конфликты тон сдержанный. Верни только JSON: {"index": номер новости начиная с 1, "text": "ТЕКСТ"}'
 )
 
@@ -140,13 +140,13 @@ def stage_hook(day, work):
         try:
             d = json.loads(txt[txt.find("{"):txt.rfind("}") + 1])
             k = int(d["index"]) - 1
-            t = str(d["text"]).strip().upper()
+            t = str(d["text"]).strip()
             if 0 <= k < len(src) and 3 <= len(t) <= 70:
                 f.write_text(json.dumps({"index": k, "text": t}, ensure_ascii=False), encoding="utf-8")
                 return {"index": k, "text": t}
         except (ValueError, KeyError, json.JSONDecodeError):
             pass
-    d = {"index": 0, "text": "СЕГОДНЯ В НОВОСТЯХ"}
+    d = {"index": 0, "text": "Главное в новостях сегодня"}
     f.write_text(json.dumps(d, ensure_ascii=False), encoding="utf-8")
     return d
 
@@ -280,7 +280,7 @@ def cut_audio(src, a, b, dst):
                     "-i", str(src), "-ac", "2", "-c:a", "libmp3lame", "-b:a", "192k", str(dst)], check=True)
 
 
-def stage_prep(day, work):
+def stage_prep(day, work, song=True):
     news_f, lyr_f = work / "news_final.json", work / "lyrics.json"
     if not news_f.exists():
         from daily_run import dedupe
@@ -296,6 +296,9 @@ def stage_prep(day, work):
         lyr = rap.make_lyrics(news["items"], news["date"])
         lyr_f.write_text(json.dumps(lyr, ensure_ascii=False, indent=2), encoding="utf-8")
     lyr = json.loads(lyr_f.read_text(encoding="utf-8"))
+    if not song:
+        print("prep: песня не нужна (день без рилса)")
+        return
     if not (work / "suno_1.mp3").exists():
         suno.generate(lyr, work)
     if not (work / "vocals.mp3").exists():
@@ -415,7 +418,7 @@ def stage_assemble(day, work):
         img = Image.new("RGBA", (W, 130), (0, 0, 0, 0)); dr = ImageDraw.Draw(img)
         dr.ellipse((50, 38, 74, 62), fill=(230, 30, 40, 255))
         y_, m_, d_ = news["date"][:4], news["date"][5:7], news["date"][8:10]
-        dr.text((88, 28), f"ЭФИР  НОВОСТИ В ТРЕКЕ  {d_}.{m_}.{y_}", font=ImageFont.truetype(lyric_video.FONT_BOLD, 38), fill=(255, 255, 255, 235))
+        dr.text((88, 28), f"Эфир · Новости в треке · {d_}.{m_}.{y_}", font=ImageFont.truetype(lyric_video.FONT_BOLD, 38), fill=(255, 255, 255, 235))
         img.save(label)
     else:
         lyric_video.label_overlay(news["date"], label)

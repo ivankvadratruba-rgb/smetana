@@ -131,13 +131,60 @@ def dedupe(items, limit):
     return out[-limit:]
 
 
+def load_settings():
+    """Настройки режима публикации в R2 (state/settings.json): mode = both (рилс и карусель каждый день) или alternate."""
+    try:
+        import r2
+        raw = r2.get("state/settings.json")
+        return json.loads(raw) if raw else {"mode": "both"}
+    except Exception:
+        return {"mode": "both"}
+
+
+def posted(hist, day, fmt):
+    return any(p["date"] == day.isoformat() and p.get("format", "reel") == fmt and not p.get("deleted")
+               for p in hist["posts"])
+
+
+def decide(hist, day, settings):
+    """Какие форматы выпускаем сегодня. both: рилс и карусель. alternate: день через день, по последнему формату."""
+    mode = os.environ.get("PUBLISH_MODE") or settings.get("mode", "both")
+    if mode == "alternate":
+        prev = [p.get("format", "reel") for p in hist["posts"] if p["date"] < day.isoformat() and not p.get("deleted")]
+        return ["carousel"] if (prev and prev[-1] == "reel") else ["reel"]
+    return ["reel", "carousel"]
+
+
+def publish_reel(day, video, name, lyr, cfg, hist):
+    public = retry(lambda: upload_r2(video, name))
+    caption = make_caption(day, lyr, cfg)
+    print("подпись:\n" + caption)
+
+    def container():
+        c = instagram_publish.create_container(public, caption)
+        instagram_publish.wait_ready(c)
+        return c
+    cid = retry(container)
+    media_id = instagram_publish.publish(cid)
+    print("рилс опубликован, id:", media_id)
+    hist["posts"].append({"date": day.isoformat(), "media_id": media_id, "style": cfg, "format": "reel",
+                          "published_at": datetime.now(timezone.utc).isoformat()})
+    style.save_history(hist)
+    try:    # сторис не должна ломать выпуск: рилс уже опубликован и записан в историю
+        hist["posts"][-1]["story_ids"] = post_story(video, name)
+        print("сторис опубликованы, id:", hist["posts"][-1]["story_ids"])
+        style.save_history(hist)
+    except Exception as e:
+        print("сторис не опубликована:", e)
+
+
 def main():
     args = [a for i, a in enumerate(sys.argv[1:], 1) if not a.startswith("--") and sys.argv[i - 1] != "--trends"]
     msk = timezone(timedelta(hours=3))
     day = (datetime.strptime(args[0], "%Y-%m-%d").date() if args else datetime.now(msk).date())
-    name = f"reel_{day.isoformat()}.mp4"
+    name = f"reel_{day.isoformat()}_hero.mp4"
     if "--force" in sys.argv:       # перевыпуск за ту же дату: новое имя файла, прежний не затираем
-        name = f"reel_{day.isoformat()}_{datetime.now(msk).strftime('%H%M')}.mp4"
+        name = f"reel_{day.isoformat()}_hero_{datetime.now(msk).strftime('%H%M')}.mp4"
 
     out = Path("out") / day.isoformat()
     out.mkdir(parents=True, exist_ok=True)
@@ -147,8 +194,11 @@ def main():
         tf = Path(sys.argv[sys.argv.index("--trends") + 1])
         trends = tf.read_text(encoding="utf-8") if tf.exists() else ""
     hist = retry(style.load_history)
-    if any(p["date"] == day.isoformat() for p in hist["posts"]) and "--force" not in sys.argv:
-        sys.exit(f"рилс за {day} уже опубликован, повторно не делаю")
+    formats = decide(hist, day, load_settings())
+    todo = [f for f in formats if "--force" in sys.argv or not posted(hist, day, f)]
+    print(f"форматы на {day}: {formats}, осталось выпустить: {todo}", flush=True)
+    if not todo:
+        sys.exit(f"за {day} всё уже опубликовано, повторно не делаю")
     style.refresh_stats(hist)
     cfg = style.next_style(hist, trends, day)
     style.apply(cfg)
@@ -167,52 +217,33 @@ def main():
     for k, v in lyr.get("flags", {}).items():
         print(f"пометка к куплету {k} (не блокирует): {v}")
 
+    import hero_run
+    need_reel = "reel" in todo
+    hero_run.stage_prep(day, out, song=need_reel)       # песня и вокал нужны только для рилса
+    hero_run.stage_frames(day, out)                      # кадры героя нужны и рилсу, и карусели
     video = None
-    if os.environ.get("HERO", "1") == "1":      # основной формат: герой сам читает трек (hero_run.py)
+    if need_reel:
         try:
-            import hero_run
-            hero_run.stage_prep(day, out)        # песня и чистый вокал (тексты и новости уже записаны)
-            hero_run.stage_frames(day, out)
             hero_run.stage_animate(day, out)
             hero_run.stage_assemble(day, out)
             video = out / "reel_hero.mp4"
-            cfg = dict(cfg, name="герой-ведущий", variable="герой в автозапуске")
             print("видео с героем готово", flush=True)
-        except BaseException as e:               # SystemExit тоже: превышен лимит расходов и подобное
-            print("герой не получился, делаю обычный ролик:", repr(e)[:300], flush=True)
-    if video is None and os.environ.get("HERO_FALLBACK", "0") != "1":
-        # владелец: публикуем только ролики с героем. Обычный ролик без героя больше не выпускается.
-        sys.exit("герой не получился, обычный ролик без героя не публикуется (HERO_FALLBACK=0)")
-    if video is None:
-        mp3, ts = out / "suno_1.mp3", out / "suno_1_ts.json"
-        if not (mp3.exists() and ts.exists()):
-            mp3, ts = retry(lambda: suno.generate(lyr, out), tries=2, pause=30)
-        video, total = lyric_video.build(out / "news_final.json", out / "lyrics.json", mp3, ts, out / "reel.mp4")
-        print(f"видео готово: {total:.1f} с", flush=True)
+        except BaseException as e:                       # SystemExit тоже: лимит расходов, нет баланса
+            print("герой не оживился, рилс не публикуется:", repr(e)[:300], flush=True)
 
     if "--no-publish" in sys.argv:
         print("публикация отключена флагом --no-publish:", video)
-        print("подпись была бы:\n" + make_caption(day, lyr, cfg))
         return
-    public = retry(lambda: upload_r2(video, name))
-    caption = make_caption(day, lyr, cfg)
-    print("подпись:\n" + caption)
-    def container():
-        c = instagram_publish.create_container(public, caption)
-        instagram_publish.wait_ready(c)
-        return c
-    cid = retry(container)
-    media_id = instagram_publish.publish(cid)
-    print("опубликовано, id:", media_id)
-    hist["posts"].append({"date": day.isoformat(), "media_id": media_id, "style": cfg,
-                          "published_at": datetime.now(timezone.utc).isoformat()})
-    style.save_history(hist)
-    try:    # сторис не должна ломать выпуск: рилс уже опубликован и записан в историю
-        hist["posts"][-1]["story_ids"] = post_story(video, name)
-        print("сторис опубликованы, id:", hist["posts"][-1]["story_ids"])
-        style.save_history(hist)
-    except Exception as e:
-        print("сторис не опубликована:", e)
+    if video is not None:
+        publish_reel(day, video, name, lyr, dict(cfg, name="герой-ведущий", variable="герой в автозапуске"), hist)
+    if "carousel" in todo:
+        try:
+            import carousel
+            carousel.run(day, publish=True, cfg=dict(cfg, name="карусель героя", variable="формат: карусель"))
+        except BaseException as e:
+            print("карусель не вышла:", repr(e)[:300], flush=True)
+    if need_reel and video is None and "carousel" not in todo:
+        sys.exit("рилс с героем не получился, ничего не опубликовано")
 
 
 if __name__ == "__main__":

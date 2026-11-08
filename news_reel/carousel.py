@@ -60,7 +60,7 @@ def label(img, date_text):
     d = ImageDraw.Draw(img)
     d.ellipse((46, 46, 66, 66), fill=(230, 30, 40, 255))
     y_, m_, d_ = date_text[:4], date_text[5:7], date_text[8:10]
-    d.text((80, 38), f"ЭФИР  НОВОСТИ В ТРЕКЕ  {d_}.{m_}.{y_}", font=ImageFont.truetype(BOLD, 32), fill=(255, 255, 255, 235), stroke_width=2, stroke_fill=(0, 0, 0, 160))
+    d.text((80, 38), f"Эфир · Новости в треке · {d_}.{m_}.{y_}", font=ImageFont.truetype(BOLD, 32), fill=(255, 255, 255, 235), stroke_width=2, stroke_fill=(0, 0, 0, 160))
     return img
 
 
@@ -90,7 +90,7 @@ def build_slides(work, day):
     im = gradient(cover(Image.open(work / "frame_00.png")), 0.45, 170)
     label(im, news["date"]); red_box(im, hook["text"], H - 430)
     d = ImageDraw.Draw(im); f = ImageFont.truetype(BOLD, 34)
-    d.text((W - 230, H - 80), "ЛИСТАЙ  ›", font=f, fill=(255, 255, 255, 255), stroke_width=2, stroke_fill=(0, 0, 0, 200))
+    d.text((W - 230, H - 80), "Листай  ›", font=f, fill=(255, 255, 255, 255), stroke_width=2, stroke_fill=(0, 0, 0, 200))
     slides.append(im)
     # 2..n+1. новости
     for i in range(n):
@@ -114,7 +114,7 @@ def make_caption(day, news, hook):
             "#новости #рэпновости #андеграунд #город")[:2200]
 
 
-def run(day, publish=False):
+def run(day, publish=False, cfg=None):
     work = Path("out") / f"hero_{day.isoformat()}"
     paths, hook, news = build_slides(work, day)
     urls = []
@@ -137,6 +137,15 @@ def run(day, publish=False):
     ig.wait_ready(cid)
     mid = ig.publish(cid)
     print("карусель опубликована, id:", mid)
+    try:    # запись в историю: формат carousel, чтобы чередование и дубли считались по формату
+        import style
+        h = style.load_history()
+        h["posts"].append({"date": day.isoformat(), "media_id": mid, "format": "carousel",
+                           "style": cfg or dict(style.DEFAULT, name="карусель героя", variable="формат: карусель"),
+                           "published_at": datetime.now().astimezone().isoformat()})
+        style.save_history(h)
+    except Exception as e:
+        print("история не обновлена:", e)
     return paths, caption, mid
 
 

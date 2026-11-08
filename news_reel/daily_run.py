@@ -180,6 +180,9 @@ def main():
             print("видео с героем готово", flush=True)
         except BaseException as e:               # SystemExit тоже: превышен лимит расходов и подобное
             print("герой не получился, делаю обычный ролик:", repr(e)[:300], flush=True)
+    if video is None and os.environ.get("HERO_FALLBACK", "0") != "1":
+        # владелец: публикуем только ролики с героем. Обычный ролик без героя больше не выпускается.
+        sys.exit("герой не получился, обычный ролик без героя не публикуется (HERO_FALLBACK=0)")
     if video is None:
         mp3, ts = out / "suno_1.mp3", out / "suno_1_ts.json"
         if not (mp3.exists() and ts.exists()):

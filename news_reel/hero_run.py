@@ -296,10 +296,13 @@ def gen_keyframe(scene, dst, i=None):
     Path(dst).write_bytes(base64.b64decode(r.json()["data"][0]["b64_json"]))
 
 
+LEAD_IN = 0.4
+
+
 def segments(work, lyr, ts):
     """Границы сегментов: вступление, каждая новость, концовка. Возвращает (t0, t_end, [(начало, конец)])."""
     g = align.group_times(lyr, ts)
-    t0 = max(0.0, g[0][0] - 1.5)
+    t0 = max(0.0, g[0][0] - LEAD_IN)      # ролик открывается почти сразу на слове, без тихих секунд
     t_end = g[-1][1] + 0.7     # сразу после последнего слова: дальше модель шевелит ртом в тишине
     cuts = [t0] + [(g[i - 1][1] + g[i][0]) / 2 for i in range(1, len(g))] + [t_end]
     return t0, t_end, [(cuts[i], cuts[i + 1]) for i in range(len(g))]
@@ -379,6 +382,9 @@ def stage_animate(day, work):
     print(f"сегментов {len(segs)}, {sum(secs):.0f} с, ориентировочно {cost:.2f} доллара (лимит {FAL_BUDGET})")
     if cost > FAL_BUDGET:
         sys.exit("выше лимита FAL_BUDGET, остановлено")
+    lead = work / "lead.json"
+    if not lead.exists():
+        lead.write_text(json.dumps({"t0": segs[0][0]}), encoding="utf-8")
     fal_video.MAX_SECONDS = 15
     fal_video.load_key()
 
@@ -422,14 +428,17 @@ def stage_assemble(day, work):
     for i, (a, b) in enumerate(segs):
         d = b - a
         clip = work / f"clip_{i:02d}.mp4"
+        off0 = 0.0
+        if i == 0 and (work / "lead.json").exists():     # первый клип оживлён по аудио со старого t0: срезаем лишнее начало
+            off0 = max(0.0, a - json.loads((work / "lead.json").read_text(encoding="utf-8"))["t0"])
         if clip.exists():
             inputs += ["-i", str(clip)]
             fl = ",fade=t=in:st=0:d=0.10:color=white" if (hook or i > 0) else ""     # вспышка на склейке
             kshots = max(1, round(d / 1.9))                                           # динамичный монтаж: планы по ~2 секунды
             if kshots == 1:
-                filt.append(f"[{i}:v]trim=duration={d:.3f},setpts=PTS-STARTPTS,scale=-2:{H},crop={W}:{H},fps={FPS},setsar=1,{zoom(i, d)}{fl}[v{i}]")
+                filt.append(f"[{i}:v]trim=start={off0:.3f}:duration={d:.3f},setpts=PTS-STARTPTS,scale=-2:{H},crop={W}:{H},fps={FPS},setsar=1,{zoom(i, d)}{fl}[v{i}]")
             else:
-                filt.append(f"[{i}:v]trim=duration={d:.3f},setpts=PTS-STARTPTS,scale=-2:{H},crop={W}:{H},fps={FPS},setsar=1,split={kshots}" + "".join(f"[r{i}_{j}]" for j in range(kshots)))
+                filt.append(f"[{i}:v]trim=start={off0:.3f}:duration={d:.3f},setpts=PTS-STARTPTS,scale=-2:{H},crop={W}:{H},fps={FPS},setsar=1,split={kshots}" + "".join(f"[r{i}_{j}]" for j in range(kshots)))
                 for j in range(kshots):
                     a0, dj = d * j / kshots, d / kshots
                     zz = SHOT_ZOOMS[(i * 3 + j) % len(SHOT_ZOOMS)]

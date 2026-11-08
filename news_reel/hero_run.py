@@ -308,7 +308,7 @@ def segments(work, lyr, ts):
 def cut_audio(src, a, b, dst):
     d = max(b - a, 4.0)       # модель принимает аудио не короче 4 секунд
     subprocess.run(["ffmpeg", "-y", "-hide_banner", "-loglevel", "error", "-ss", f"{a:.3f}", "-t", f"{d:.3f}",
-                    "-i", str(src), "-ac", "2", "-c:a", "libmp3lame", "-b:a", "192k", str(dst)], check=True)
+                    "-i", str(src), "-ar", "44100", "-ac", "1", "-c:a", "pcm_s16le", str(dst)], check=True)   # wav: fal иногда не принимает mp3
 
 
 def stage_prep(day, work, song=True):
@@ -386,7 +386,7 @@ def stage_animate(day, work):
         out = work / f"clip_{i:02d}.mp4"
         if out.exists():
             return
-        a_f = work / f"seg_{i:02d}.mp3"
+        a_f = work / f"seg_{i:02d}.wav"
         cut_audio(audio_src, segs[i][0], segs[i][1], a_f)
         try:    # один платный вызов на сегмент, без слепых повторов
             fal_video.avatar_clip(work / f"frame_{i:02d}.png", a_f, out, prompt=(clip_prompt(i, len(segs)) if CONCEPT == "studio_roles" else CLIP_PROMPT), go=True)

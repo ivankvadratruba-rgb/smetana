@@ -5,3 +5,4 @@ out/
 character/*.png
 !character/front_closeup.png
 !character/front_waist.png
+character/macro/

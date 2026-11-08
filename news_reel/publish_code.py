@@ -12,6 +12,7 @@ SKIP = {"__pycache__", "out", "samples"}
 
 
 def build():
+    os.chdir(os.path.dirname(os.path.abspath(__file__)))     # всегда из папки news_reel, откуда бы ни запустили
     buf = io.BytesIO()
     with tarfile.open(fileobj=buf, mode="w:gz") as tar:
         for name in sorted(os.listdir(".")):
@@ -27,5 +28,7 @@ def build():
 
 if __name__ == "__main__":
     data = build()
+    if len(data) < 100_000:
+        raise SystemExit(f"архив подозрительно мал ({len(data)} байт), в R2 не выкладываю")
     r2.put("code/news_reel.tar.gz", data, "application/gzip")
     print(f"код выложен в R2: {len(data) // 1024} КБ")

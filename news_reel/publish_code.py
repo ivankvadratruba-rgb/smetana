@@ -21,7 +21,8 @@ def build():
             if os.path.isfile(name) and name.endswith(KEEP_EXT):
                 tar.add(name, arcname=f"news_reel/{name}")
         for f in ("character/front_closeup.png", "character/front_waist.png", "character/full_body.png",
-                  "character/portrait_front_b.png", "character/portrait_three_quarter.png"):
+                  "character/portrait_front_b.png", "character/portrait_three_quarter.png", "character/portrait_3q_left_a.png",
+                  "character/portrait_3q_left_b.png", "character/portrait_3q_stern.png"):
             if os.path.exists(f):
                 tar.add(f, arcname=f"news_reel/{f}")
     return buf.getvalue()

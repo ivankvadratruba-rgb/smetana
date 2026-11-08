@@ -219,23 +219,36 @@ def scene_brief(item):
     return "Setting: " + r["choices"][0]["message"]["content"].strip()
 
 
-_FAL_REFS = []
+_FAL_UP = {}
+
+
+ANGLE_REFS = ["character/portrait_3q_left_a.png", "character/portrait_three_quarter.png",
+              "character/portrait_3q_stern.png", "character/portrait_3q_left_b.png"]   # третья опора кадра, по кругу
+
+
+def _refs_for(i):
+    """Базовые опоры плюс одна под ракурс кадра: так образ держится при смене углов."""
+    extra = ANGLE_REFS[(i or 0) % len(ANGLE_REFS)]
+    base = [r for r in REFS if r != extra]
+    return base + [extra]
 
 
 def _kf(scene):
     return (KEYFRAME_ROLES if CONCEPT == "studio_roles" else KEYFRAME).format(scene=scene)
 
 
-def gen_keyframe_fal(scene, dst):
+def gen_keyframe_fal(scene, dst, i=None):
     """Запасной путь: кадр героя через fal (nano-banana/edit, 0,04 доллара за кадр), если OpenAI недоступен."""
     import fal_client
     fal_video.load_key()
-    if not _FAL_REFS:
-        _FAL_REFS.extend(fal_client.upload_file(p) for p in REFS)
+    refs = _refs_for(i)
+    for p_ in refs:
+        if p_ not in _FAL_UP:
+            _FAL_UP[p_] = fal_client.upload_file(p_)
     res = fal_client.subscribe("fal-ai/nano-banana/edit", arguments={
         "prompt": "Use the person from the reference images as the exact same man (identical face, shaved head, "
                   "mustache, earring, navy fur coat, white shirt, black tie). " + _kf(scene),
-        "image_urls": _FAL_REFS, "aspect_ratio": "2:3", "output_format": "png", "num_images": 1})
+        "image_urls": [_FAL_UP[p_] for p_ in refs], "aspect_ratio": "2:3", "output_format": "png", "num_images": 1})
     try:
         import ledger
         ledger.fal("nano-banana", 1, 0.0398)
@@ -246,16 +259,16 @@ def gen_keyframe_fal(scene, dst):
     Path(dst).write_bytes(data)
 
 
-def gen_keyframe(scene, dst):
+def gen_keyframe(scene, dst, i=None):
     if os.environ.get("HERO_IMAGE_PROVIDER") == "fal":
-        return gen_keyframe_fal(scene, dst)
-    files = [("image[]", (Path(p).name, Path(p).read_bytes(), "image/png")) for p in REFS]
+        return gen_keyframe_fal(scene, dst, i)
+    files = [("image[]", (Path(p).name, Path(p).read_bytes(), "image/png")) for p in _refs_for(i)]
     r = httpx.post("https://api.openai.com/v1/images/edits", headers={"User-Agent": UA}, timeout=290, files=files,
                    data={"model": "gpt-image-2", "prompt": _kf(scene), "size": "1024x1536",
                          "quality": "medium", "n": "1"})
     if r.status_code == 429 and "credit_balance_exhausted" in r.text:   # на OpenAI нет кредитов: рисуем через fal
         print("OpenAI без кредитов, кадр через fal")
-        return gen_keyframe_fal(scene, dst)
+        return gen_keyframe_fal(scene, dst, i)
     r.raise_for_status()
     try:
         import ledger
@@ -327,7 +340,7 @@ def stage_frames(day, work):
         if not paths[i].exists():
             for attempt in range(3):
                 try:
-                    gen_keyframe(scenes[i], paths[i])
+                    gen_keyframe(scenes[i], paths[i], i)
                     return
                 except Exception as e:
                     print(f"кадр {i}: попытка {attempt + 1}: {e}")

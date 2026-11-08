@@ -119,7 +119,7 @@ HOOK_RULES = (
 )
 
 
-SHOT_ZOOMS = [1.0, 1.32, 1.12, 1.52, 1.22, 1.42]       # масштабы коротких планов: общий, крупный, средний, очень крупный...
+SHOT_ZOOMS = [1.0, 1.08, 1.04, 1.1, 1.06, 1.1]    # цифровой зум не больше 1,1: больше размывает кадр       # масштабы коротких планов: общий, крупный, средний, очень крупный...
 SHOT_SHIFTS = [0.0, -0.05, 0.04, -0.03, 0.05, 0.0]       # лёгкий сдвиг кадра по горизонтали
 MACROS = ["macro_front_b", "macro_profile_right", "macro_front_c", "macro_three_quarter_a", "macro_eyes",
           "macro_profile_left", "macro_mouth", "macro_three_quarter_b", "macro_front_a", "macro_eye_ear"]
@@ -404,7 +404,8 @@ def stage_assemble(day, work):
     t0, t_end, segs = segments(work, lyr, ts)
     main_total = t_end - t0
     lines = align.line_times(lyr, ts)
-    hook = stage_hook(day, work) if CONCEPT == "studio_roles" else None
+    # видео-крючок отключён по решению владельца (HOOK_VIDEO=1 включает); текст крючка остаётся для карусели и подписи
+    hook = stage_hook(day, work) if (CONCEPT == "studio_roles" and os.environ.get("HOOK_VIDEO", "0") == "1") else None
     HD = 0.0
     if hook:      # крючок на целой фразе (не на полуслове): от начала строки до её конца
         _, la, lb = lines[1 + 2 * hook["index"]]
@@ -434,7 +435,7 @@ def stage_assemble(day, work):
                     zz = SHOT_ZOOMS[(i * 3 + j) % len(SHOT_ZOOMS)]
                     sh = SHOT_SHIFTS[(i + j) % len(SHOT_SHIFTS)]
                     filt.append(f"[r{i}_{j}]trim=start={a0:.3f}:duration={dj:.3f},setpts=PTS-STARTPTS,"
-                                f"scale=w='trunc({W}*{zz}*(1+0.05*t/{dj:.3f})/2)*2':h='trunc({H}*{zz}*(1+0.05*t/{dj:.3f})/2)*2':eval=frame,"
+                                f"scale=w='trunc({W}*{zz}*(1+0.03*t/{dj:.3f})/2)*2':h='trunc({H}*{zz}*(1+0.03*t/{dj:.3f})/2)*2':eval=frame,"
                                 f"crop={W}:{H}:'(iw-{W})/2+({sh})*{W}':'(ih-{H})*0.12',setsar=1[q{i}_{j}]")
                 filt.append("".join(f"[q{i}_{j}]" for j in range(kshots)) + f"concat=n={kshots}:v=1:a=0{fl}[v{i}]")
         else:   # запасной вариант: кадр без анимации с плавным приближением
@@ -458,7 +459,7 @@ def stage_assemble(day, work):
     parts += [f"[v{i}]" for i in range(n)]
     filt.append("".join(parts) + f"concat=n={len(parts)}:v=1:a=0[base0]")
     base = "base0"
-    macros = macro_paths() if CONCEPT == "studio_roles" else []
+    macros = macro_paths() if (CONCEPT == "studio_roles" and os.environ.get("MACROS", "0") == "1") else []   # вставки отключены, пока не привязаны к биту
     for k in range(len(news["items"]) if macros else 0):      # короткий крупный план лица на первую строку каждой новости
         la = lines[1 + 2 * k][1]
         T = HD + (la - t0) - 0.02

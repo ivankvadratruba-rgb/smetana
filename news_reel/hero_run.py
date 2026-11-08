@@ -66,6 +66,52 @@ CLIP_PROMPT = (
     "arm swing, fur coat sways. Background elements move naturally (leaves, branches, light). The camera "
     "backs up smoothly so he stays waist-up in frame."
 )
+CONCEPT = os.environ.get("HERO_CONCEPT", "studio_roles")   # studio_roles: эфирная студия + роли по новостям; walk: старый вариант
+
+KEYFRAME_ROLES = (
+    "Photorealistic cinematic vertical 9:16 frame, shot on a full-frame camera, fine film grain, moody hard lighting. "
+    "The exact same man as in the reference images (identical face, shaved head, handlebar mustache, silver hoop "
+    "earring, white shirt, thin black tie, always wearing his oversized dark navy fur coat) {scene} "
+    "He looks straight into the camera with a stern, intense expression. Chest-up medium shot, his face moderately large "
+    "and sharp, the surroundings clearly visible around him. No other people, no text, no logos, no flags, no weapons, "
+    "no blood, no ropes or loops."
+)
+ROLE_CLIP_PROMPT = (
+    "The man raps aggressively straight into the camera, clear precise articulation of every word, mouth and lips move "
+    "constantly with the vocal, stern intense expression, small rhythmic head nods and expressive hand gestures that fit "
+    "his role, his fur coat shifts with the movement. The surroundings move naturally (light, dust, steam, screens). "
+    "The camera slowly pushes in, he stays chest-up in frame."
+)
+STUDIO_INTRO = ("is standing in a dark TV news studio at a black desk with a studio microphone, behind him a wall of "
+                "monitors glowing with abstract colorful imagery without any text, a red ON AIR lamp lit above, "
+                "cables and spotlights around.")
+STUDIO_OUTRO = ("is in the same dark TV news studio, the red ON AIR lamp now switched off, monitors behind him dimmed to "
+                "a dark blue glow, he is about to sign off with a short nod.")
+ROLE_RULES = (
+    "Для каждой новости придумай роль и место для героя клипа: рэпер-ведущий в тёмной шубе «оказался на месте» новости. "
+    "Опиши по-английски одним-двумя предложениями начиная со слов 'is ...': где он (место) и что у него в руках или рядом "
+    "(реквизит под тему: фонарик при блэкауте, горы писем, наушники, ручка и бумага). Шуба на нём всегда. "
+    "Правила: никаких других людей и лиц; без текста и логотипов; без оружия, крови, насилия, тел и жертв; для новостей про "
+    "гибель, насилие, задержания, приговоры, политиков и конфликты показывай только нейтральное символическое место "
+    "(пустой коридор, закрытая дверь, ночная улица, зал ожидания) и сдержанный реквизит, без самого события; "
+    "без верёвок и петель. Все места должны сильно отличаться друг от друга. "
+    'Верни только JSON-массив строк той же длины и порядка: ["is ...", ...]'
+)
+
+
+def role_scenes(items):
+    src = [{"title": it["title"], "summary": it.get("summary", ""), "setting": it.get("_setting", "")} for it in items]
+    for _ in range(3):
+        txt = paraphrase.call_openai(ROLE_RULES + "\n\nНовости:\n" + json.dumps(src, ensure_ascii=False), "gpt-4.1")
+        try:
+            arr = json.loads(txt[txt.find("["):txt.rfind("]") + 1])
+            if len(arr) == len(items) and all(isinstance(x, str) and x.strip() for x in arr):
+                return ["Setting: " + x.strip() if not x.strip().lower().startswith("setting") else x for x in arr]
+        except json.JSONDecodeError:
+            pass
+    raise RuntimeError("не удалось придумать роли")
+
+
 INTRO_SCENE = "Setting: an empty city street at early evening, warm streetlights just coming on, wet asphalt, calm."
 OUTRO_SCENE = "Setting: the same city street at night, distant warm window lights, he is stopping and about to nod."
 
@@ -105,6 +151,10 @@ def scene_brief(item):
 _FAL_REFS = []
 
 
+def _kf(scene):
+    return (KEYFRAME_ROLES if CONCEPT == "studio_roles" else KEYFRAME).format(scene=scene)
+
+
 def gen_keyframe_fal(scene, dst):
     """Запасной путь: кадр героя через fal (nano-banana/edit, 0,04 доллара за кадр), если OpenAI недоступен."""
     import fal_client
@@ -113,7 +163,7 @@ def gen_keyframe_fal(scene, dst):
         _FAL_REFS.extend(fal_client.upload_file(p) for p in REFS)
     res = fal_client.subscribe("fal-ai/nano-banana/edit", arguments={
         "prompt": "Use the person from the reference images as the exact same man (identical face, shaved head, "
-                  "mustache, earring, navy fur coat, white shirt, black tie). " + KEYFRAME.format(scene=scene),
+                  "mustache, earring, navy fur coat, white shirt, black tie). " + _kf(scene),
         "image_urls": _FAL_REFS, "aspect_ratio": "2:3", "output_format": "png", "num_images": 1})
     try:
         import ledger
@@ -130,7 +180,7 @@ def gen_keyframe(scene, dst):
         return gen_keyframe_fal(scene, dst)
     files = [("image[]", (Path(p).name, Path(p).read_bytes(), "image/png")) for p in REFS]
     r = httpx.post("https://api.openai.com/v1/images/edits", headers={"User-Agent": UA}, timeout=290, files=files,
-                   data={"model": "gpt-image-2", "prompt": KEYFRAME.format(scene=scene), "size": "1024x1536",
+                   data={"model": "gpt-image-2", "prompt": _kf(scene), "size": "1024x1536",
                          "quality": "medium", "n": "1"})
     if r.status_code == 429 and "credit_balance_exhausted" in r.text:   # на OpenAI нет кредитов: рисуем через fal
         print("OpenAI без кредитов, кадр через fal")
@@ -190,7 +240,12 @@ def stage_frames(day, work):
     briefs_f = work / "scenes.json"
     scenes = json.loads(briefs_f.read_text(encoding="utf-8")) if briefs_f.exists() else None
     if not scenes:
-        scenes = [INTRO_SCENE] + [scene_brief(it) for it in news["items"]] + [OUTRO_SCENE]
+        if CONCEPT == "studio_roles":
+            for it in news["items"]:
+                it["_setting"] = scene_brief(it)          # обстановка по фото новости, дальше к ней добавляется роль
+            scenes = ["Setting: he " + STUDIO_INTRO] + role_scenes(news["items"]) + ["Setting: he " + STUDIO_OUTRO]
+        else:
+            scenes = [INTRO_SCENE] + [scene_brief(it) for it in news["items"]] + [OUTRO_SCENE]
         briefs_f.write_text(json.dumps(scenes, ensure_ascii=False, indent=2), encoding="utf-8")
     paths = [work / f"frame_{i:02d}.png" for i in range(len(scenes))]
 
@@ -229,7 +284,7 @@ def stage_animate(day, work):
         a_f = work / f"seg_{i:02d}.mp3"
         cut_audio(audio_src, segs[i][0], segs[i][1], a_f)
         try:    # один платный вызов на сегмент, без слепых повторов
-            fal_video.avatar_clip(work / f"frame_{i:02d}.png", a_f, out, prompt=CLIP_PROMPT, go=True)
+            fal_video.avatar_clip(work / f"frame_{i:02d}.png", a_f, out, prompt=(ROLE_CLIP_PROMPT if CONCEPT == "studio_roles" else CLIP_PROMPT), go=True)
         except Exception as e:
             print(f"сегмент {i} не оживлён: {e}")
     with ThreadPoolExecutor(3) as ex:
@@ -257,7 +312,15 @@ def stage_assemble(day, work):
     n = len(segs)
     filt.append("".join(f"[v{i}]" for i in range(n)) + f"concat=n={n}:v=1:a=0[base]")
     label = work / "label.png"
-    lyric_video.label_overlay(news["date"], label)
+    if CONCEPT == "studio_roles":
+        from PIL import Image, ImageDraw, ImageFont
+        img = Image.new("RGBA", (W, 130), (0, 0, 0, 0)); dr = ImageDraw.Draw(img)
+        dr.ellipse((50, 38, 74, 62), fill=(230, 30, 40, 255))
+        y_, m_, d_ = news["date"][:4], news["date"][5:7], news["date"][8:10]
+        dr.text((88, 28), f"ЭФИР  НОВОСТИ В ТРЕКЕ  {d_}.{m_}.{y_}", font=ImageFont.truetype(lyric_video.FONT_BOLD, 38), fill=(255, 255, 255, 235))
+        img.save(label)
+    else:
+        lyric_video.label_overlay(news["date"], label)
     inputs += ["-framerate", str(FPS), "-loop", "1", "-t", f"{total:.3f}", "-i", str(label)]
     filt.append(f"[base][{n}:v]overlay=0:{LABEL_Y}[o0]")
     cur = "o0"

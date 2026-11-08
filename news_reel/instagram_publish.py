@@ -50,6 +50,15 @@ def create_container(video_url, caption, thumb_offset=THUMB_OFFSET_MS):
         raise
 
 
+def create_carousel_item(image_url):
+    """Один слайд будущей карусели (JPEG по публичной ссылке)."""
+    return call(f"{IG_ID}/media", {"image_url": image_url, "is_carousel_item": "true"})["id"]
+
+
+def create_carousel(children, caption):
+    return call(f"{IG_ID}/media", {"media_type": "CAROUSEL", "children": ",".join(children), "caption": caption})["id"]
+
+
 def create_story_container(video_url):
     """Сторис с видео (до 60 секунд). Подписи у сторис нет."""
     return call(f"{IG_ID}/media", {"media_type": "STORIES", "video_url": video_url})["id"]

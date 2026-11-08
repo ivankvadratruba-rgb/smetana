@@ -72,8 +72,9 @@ KEYFRAME_ROLES = (
     "Photorealistic cinematic vertical 9:16 frame, shot on a full-frame camera, fine film grain, moody hard lighting. "
     "The exact same man as in the reference images (identical face, shaved head, handlebar mustache, silver hoop "
     "earring, white shirt, thin black tie, always wearing his oversized dark navy fur coat) {scene} "
-    "He looks straight into the camera with a serious, composed expression and quiet menace. Chest-up medium shot, his face moderately large "
-    "and sharp, the surroundings clearly visible around him. No other people, no text, no logos, no flags, no weapons, "
+    "He looks straight into the camera with a serious, composed expression and quiet menace. Tight chest-up framing: the image is cropped "
+    "at his chest, his legs and lower body are NOT visible, his face is large and sharp in the upper half of the frame, the surroundings "
+    "visible behind and beside him. No other people, no text, no logos, no flags, no weapons, "
     "no blood, no ropes or loops."
 )
 ROLE_CLIP_PROMPT = (

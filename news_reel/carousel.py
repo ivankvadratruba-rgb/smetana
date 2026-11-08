@@ -1,6 +1,6 @@
 """Карусель Instagram из кадров героя (сценарий «эфир плюс роли по новостям»).
 
-Слайды 1080x1350 (4:5): обложка с крючком, по слайду на каждую новость с куплетом, финальный слайд с призывом.
+Слайды 1080x1350 (4:5): обложка с крючком и по слайду на каждую новость с куплетом. Призыв к подписке только в подписи.
 Запуск: python3 carousel.py ДАТА            собрать слайды и выложить в R2, ничего не публиковать
         python3 carousel.py ДАТА --publish  опубликовать карусель (только по команде владельца)
 """
@@ -97,11 +97,6 @@ def build_slides(work, day):
         im = gradient(cover(Image.open(work / f"frame_{i + 1:02d}.png")))
         label(im, news["date"]); text_block(im, lyr["items"][i])
         slides.append(im)
-    # последний: призыв
-    im = gradient(cover(Image.open(work / f"frame_{n + 1:02d}.png")), 0.55, 215)
-    label(im, news["date"])
-    text_block(im, ["ПОДПИШИСЬ, ЧТОБЫ НЕ ПРОПУСТИТЬ ЗАВТРАШНИЙ ВЫПУСК", "@vtreke.news"], bottom=120, sizes=(58, 50))
-    slides.append(im)
     out = []
     for i, s in enumerate(slides, 1):
         p = work / f"slide_{i:02d}.jpg"

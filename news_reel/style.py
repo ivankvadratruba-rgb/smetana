@@ -43,14 +43,14 @@ def phase(day, h=None):
 
 
 # Жёсткое правило по музыке: модель стиля может менять детали, но не уходить в поп.
-MUSIC_CORE = ("hard raw underground russian hip-hop, gritty dry heavy drums, dirty dusty sample, "
-              "low 808 bass, clear articulate mid-range male voice, natural not too deep, no heavy rasp, no growl, fast aggressive punchy street rap flow, "
-              "shouted ad-libs, raw energy, no chorus, no singing, no melody hooks, no autotune, "
-              "dark and menacing, lo-fi")
-LYRICS_CORE = ("Подача: жёсткая, быстрая, агрессивная уличная читка, короткие рубленые тяжёлые строки, злая "
-               "ирония, без припева и без сладости. Мат разрешён владельцем: используй его как усиление "
-               "эмоции, уместно, не в каждой строке. Не бей матом по людям из новостей, особенно по погибшим "
-               "и пострадавшим; без призывов к насилию.")
+MUSIC_CORE = ("dark moody underground russian hip-hop, gritty dry drums, dusty sample, low 808 bass, "
+              "clear articulate mid-range male voice, natural not too deep, confident controlled rhythmic flow, "
+              "steady medium tempo, calm menace instead of shouting, no screaming, no yelling, no shouted ad-libs, "
+              "no chorus, no singing, no autotune, lo-fi")
+LYRICS_CORE = ("Подача: уверенная, чёткая, ритмичная читка со спокойной злостью, без крика и без восклицаний, короткие "
+               "строки, мрачная ирония, без припева. Мат допустим, но редко: не больше одного-двух раз на весь текст и только "
+               "там, где это усиливает мысль. Не бей матом по людям из новостей, особенно по погибшим и пострадавшим; "
+               "без призывов к насилию.")
 
 
 def load_history():

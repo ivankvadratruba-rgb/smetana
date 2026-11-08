@@ -40,7 +40,7 @@ CHANNEL = os.environ.get("NEWS_CHANNEL", "ostorozhno_novosti")
 NEWS_COUNT = int(os.environ.get("HERO_NEWS", "6"))
 FAL_BUDGET = float(os.environ.get("FAL_BUDGET", "8"))
 REFS = ["character/front_waist.png", "character/full_body.png"]
-SUNO_DETAILS = "90 BPM, dusty dark sample, hard dry drums, fast aggressive punchy flow, clear articulate mid-range male voice, natural and not too deep, no heavy rasp"
+SUNO_DETAILS = "90 BPM, dusty dark sample, hard dry drums, confident controlled rhythmic flow, calm menace not shouting, clear articulate mid-range male voice, natural and not too deep, no heavy rasp"
 W, H, FPS = 1080, 1920, 30
 LABEL_Y = 1060    # у героя лицо наверху кадра: дату ставим над строкой текста, ниже груди (сверху её закрыл бы интерфейс Instagram)
 LINE_Y = H - 800   # строки текста выше подписи рилса и панели ответа сторис
@@ -72,14 +72,14 @@ KEYFRAME_ROLES = (
     "Photorealistic cinematic vertical 9:16 frame, shot on a full-frame camera, fine film grain, moody hard lighting. "
     "The exact same man as in the reference images (identical face, shaved head, handlebar mustache, silver hoop "
     "earring, white shirt, thin black tie, always wearing his oversized dark navy fur coat) {scene} "
-    "He looks straight into the camera with a stern, intense expression. Chest-up medium shot, his face moderately large "
+    "He looks straight into the camera with a serious, composed expression and quiet menace. Chest-up medium shot, his face moderately large "
     "and sharp, the surroundings clearly visible around him. No other people, no text, no logos, no flags, no weapons, "
     "no blood, no ropes or loops."
 )
 ROLE_CLIP_PROMPT = (
-    "The man raps aggressively straight into the camera, clear precise articulation of every word, mouth and lips move "
-    "constantly with the vocal, stern intense expression, small rhythmic head nods and expressive hand gestures that fit "
-    "his role, his fur coat shifts with the movement. The surroundings move naturally (light, dust, steam, screens). "
+    "The man raps confidently and calmly straight into the camera, clear precise articulation of every word, mouth and lips "
+    "follow the vocal naturally, composed serious expression with quiet menace, never shouting, mouth never stretched wide, "
+    "small rhythmic head nods and measured hand gestures that fit his role, his fur coat shifts slightly. The surroundings move naturally (light, dust, steam, screens). "
     "The camera slowly pushes in, he stays chest-up in frame."
 )
 STUDIO_INTRO = ("is standing in a dark TV news studio at a black desk with a studio microphone, behind him a wall of "
@@ -374,7 +374,10 @@ def stage_assemble(day, work):
     main_total = t_end - t0
     lines = align.line_times(lyr, ts)
     hook = stage_hook(day, work) if CONCEPT == "studio_roles" else None
-    HD = 2.8 if hook else 0.0                      # длительность крючка в начале
+    HD = 0.0
+    if hook:      # крючок на целой фразе (не на полуслове): от начала строки до её конца
+        _, la, lb = lines[1 + 2 * hook["index"]]
+        HD = min(max(lb - la + 0.15, 2.6), 4.2)
     total = main_total + HD
     inputs, filt = [], []
     n = len(segs)
@@ -443,12 +446,14 @@ def stage_assemble(day, work):
     filt.append(f"[{cur}]fade=t=out:st={total - 0.8:.2f}:d=0.8[vout]")     # без появления из чёрного: первый кадр сразу крючок
 
     audio_inputs = []
-    if hook:
+    if hook:   # затухание в конце крючка и нарастание в начале основной части: без щелчка и скачка на стыке
         inputs += ["-ss", f"{a_line:.3f}", "-t", f"{HD:.3f}", "-i", str(work / "suno_1.mp3")]
-        audio_inputs.append(f"[{idx}:a]")
+        filt.append(f"[{idx}:a]afade=t=out:st={HD - 0.18:.3f}:d=0.18[ha]")
+        audio_inputs.append("[ha]")
         idx += 1
     inputs += ["-ss", f"{t0:.3f}", "-t", f"{main_total:.3f}", "-i", str(work / "suno_1.mp3")]
-    audio_inputs.append(f"[{idx}:a]")
+    filt.append(f"[{idx}:a]afade=t=in:st=0:d=0.15[ma]" if hook else f"[{idx}:a]anull[ma]")
+    audio_inputs.append("[ma]")
     filt.append("".join(audio_inputs) + f"concat=n={len(audio_inputs)}:v=0:a=1,afade=t=out:st={total - 1.2:.2f}:d=1.2,loudnorm=I=-14:TP=-1.5[aout]")
     out = work / "reel_hero.mp4"
     subprocess.run(["ffmpeg", "-y", "-hide_banner", "-loglevel", "error", *inputs, "-filter_complex", ";".join(filt),

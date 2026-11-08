@@ -21,7 +21,8 @@ STYLE = os.environ.get("SUNO_STYLE", "dark russian boom bap rap, 96 BPM, melanch
                                       "minor key, sparse piano and vinyl crackle, calm delivery")
 TITLE = "Новости дня"
 NEGATIVE = ("pop, pop rap, mainstream, upbeat, cheerful, happy, dance, EDM, club, trap pop, autotune, "
-            "melodic chorus, singing, sing-song, bright synths, electronic, radio")
+            "melodic chorus, singing, sing-song, bright synths, electronic, radio, shouting, screaming, yelling, "
+            "aggressive vocals, harsh vocals, distorted vocals, shouted ad-libs")
 UA = "smetana-news-reel/1.0"
 
 

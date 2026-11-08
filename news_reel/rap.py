@@ -41,8 +41,8 @@ MONTHS = ["", "января", "февраля", "марта", "апреля", "�
 
 def intro_outro(date_text):
     d = datetime.strptime(date_text, "%Y-%m-%d")
-    return (f"Привет! {DAYS[d.day]} {MONTHS[d.month]}, вот новости дня.",
-            "Вот и всё на сегодня. До завтра!")
+    return (f"Привет. {DAYS[d.day]} {MONTHS[d.month]}, поехали.",
+            "На сегодня всё. До завтра.")
 
 
 def build_prompt(item):

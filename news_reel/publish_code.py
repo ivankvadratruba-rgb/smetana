@@ -20,6 +20,8 @@ def build():
                 continue
             if os.path.isfile(name) and name.endswith(KEEP_EXT):
                 tar.add(name, arcname=f"news_reel/{name}")
+        for f in sorted(os.listdir("character/macro")) if os.path.isdir("character/macro") else []:
+            tar.add(f"character/macro/{f}", arcname=f"news_reel/character/macro/{f}")
         for f in ("character/front_closeup.png", "character/front_waist.png", "character/full_body.png",
                   "character/portrait_front_b.png", "character/portrait_three_quarter.png", "character/portrait_3q_left_a.png",
                   "character/portrait_3q_left_b.png", "character/portrait_3q_stern.png"):

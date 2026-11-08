@@ -119,6 +119,23 @@ HOOK_RULES = (
 )
 
 
+SHOT_ZOOMS = [1.0, 1.32, 1.12, 1.52, 1.22, 1.42]       # масштабы коротких планов: общий, крупный, средний, очень крупный...
+SHOT_SHIFTS = [0.0, -0.05, 0.04, -0.03, 0.05, 0.0]       # лёгкий сдвиг кадра по горизонтали
+MACROS = ["macro_front_b", "macro_profile_right", "macro_front_c", "macro_three_quarter_a", "macro_eyes",
+          "macro_profile_left", "macro_mouth", "macro_three_quarter_b", "macro_front_a", "macro_eye_ear"]
+
+
+def macro_paths():
+    out = []
+    for n in MACROS:
+        for ext in ("jpg", "png"):
+            q = Path("character/macro") / f"{n}.{ext}" if ext == "jpg" else Path("character") / f"{n}.{ext}"
+            if q.exists():
+                out.append(q)
+                break
+    return out
+
+
 def clip_prompt(i, n):
     base = ROLE_CLIP_PROMPT.replace("The camera slowly pushes in, he stays chest-up in frame.", "He stays chest-up in frame.")
     if i == 0:
@@ -407,7 +424,19 @@ def stage_assemble(day, work):
         if clip.exists():
             inputs += ["-i", str(clip)]
             fl = ",fade=t=in:st=0:d=0.10:color=white" if (hook or i > 0) else ""     # вспышка на склейке
-            filt.append(f"[{i}:v]trim=duration={d:.3f},setpts=PTS-STARTPTS,scale=-2:{H},crop={W}:{H},fps={FPS},setsar=1,{zoom(i, d)}{fl}[v{i}]")
+            kshots = max(1, round(d / 1.9))                                           # динамичный монтаж: планы по ~2 секунды
+            if kshots == 1:
+                filt.append(f"[{i}:v]trim=duration={d:.3f},setpts=PTS-STARTPTS,scale=-2:{H},crop={W}:{H},fps={FPS},setsar=1,{zoom(i, d)}{fl}[v{i}]")
+            else:
+                filt.append(f"[{i}:v]trim=duration={d:.3f},setpts=PTS-STARTPTS,scale=-2:{H},crop={W}:{H},fps={FPS},setsar=1,split={kshots}" + "".join(f"[r{i}_{j}]" for j in range(kshots)))
+                for j in range(kshots):
+                    a0, dj = d * j / kshots, d / kshots
+                    zz = SHOT_ZOOMS[(i * 3 + j) % len(SHOT_ZOOMS)]
+                    sh = SHOT_SHIFTS[(i + j) % len(SHOT_SHIFTS)]
+                    filt.append(f"[r{i}_{j}]trim=start={a0:.3f}:duration={dj:.3f},setpts=PTS-STARTPTS,"
+                                f"scale=w='trunc({W}*{zz}*(1+0.05*t/{dj:.3f})/2)*2':h='trunc({H}*{zz}*(1+0.05*t/{dj:.3f})/2)*2':eval=frame,"
+                                f"crop={W}:{H}:'(iw-{W})/2+({sh})*{W}':'(ih-{H})*0.12',setsar=1[q{i}_{j}]")
+                filt.append("".join(f"[q{i}_{j}]" for j in range(kshots)) + f"concat=n={kshots}:v=1:a=0{fl}[v{i}]")
         else:   # запасной вариант: кадр без анимации с плавным приближением
             inputs += ["-framerate", str(FPS), "-loop", "1", "-t", f"{d:.3f}", "-i", str(work / f"frame_{i:02d}.png")]
             filt.append(f"[{i}:v]scale=-2:{H},crop={W}:{H},zoompan=z='min(1+0.0004*on,1.08)':d=1:s={W}x{H}:fps={FPS},setsar=1[v{i}]")
@@ -427,7 +456,20 @@ def stage_assemble(day, work):
         idx += 1
         parts.append("[hk]")
     parts += [f"[v{i}]" for i in range(n)]
-    filt.append("".join(parts) + f"concat=n={len(parts)}:v=1:a=0[base]")
+    filt.append("".join(parts) + f"concat=n={len(parts)}:v=1:a=0[base0]")
+    base = "base0"
+    macros = macro_paths() if CONCEPT == "studio_roles" else []
+    for k in range(len(news["items"]) if macros else 0):      # короткий крупный план лица на первую строку каждой новости
+        la = lines[1 + 2 * k][1]
+        T = HD + (la - t0) - 0.02
+        md = 0.34
+        inputs += ["-framerate", str(FPS), "-loop", "1", "-t", f"{md + 0.1:.2f}", "-i", str(macros[k % len(macros)])]
+        filt.append(f"[{idx}:v]scale=-2:{H},crop={W}:{H},scale=w='trunc({W}*(1+0.14*t/{md})/2)*2':h='trunc({H}*(1+0.14*t/{md})/2)*2':eval=frame,"
+                    f"crop={W}:{H},setsar=1,setpts=PTS+{T:.3f}/TB[mx{k}]")
+        filt.append(f"[{base}][mx{k}]overlay=0:0:enable='between(t,{T:.3f},{T + md:.3f})':eof_action=pass[mb{k}]")
+        base = f"mb{k}"
+        idx += 1
+    filt.append(f"[{base}]null[base]")
 
     label = work / "label.png"
     if CONCEPT == "studio_roles":

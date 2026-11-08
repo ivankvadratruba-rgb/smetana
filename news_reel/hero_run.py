@@ -99,6 +99,76 @@ ROLE_RULES = (
 )
 
 
+ANGLES = ["eye-level front view",
+          "low-angle shot from slightly below, looking up at him",
+          "three-quarter view from his left side, his head turned toward the camera",
+          "high-angle shot from slightly above",
+          "three-quarter view from his right side, his head turned toward the camera",
+          "slightly tilted dutch-angle framing"]
+CAMERA_MOVES = ["the camera slowly orbits around him from left to right while he keeps looking at the lens",
+                "the camera dollies in fast toward his face and settles",
+                "the camera cranes up from a low angle to eye level",
+                "the camera arcs around him from right to left",
+                "a handheld camera with slight shake pushing in",
+                "the camera pulls back and sweeps to the right"]
+HOOK_RULES = (
+    "Из новостей выбери одну самую цепляющую для крючка в начале ролика и придумай экранный текст крючка: до 7 слов, "
+    "заглавными буквами, по-русски, только факты из заголовка и без мата. Для новостей про гибель, насилие, политиков и "
+    'конфликты тон сдержанный. Верни только JSON: {"index": номер новости начиная с 1, "text": "ТЕКСТ"}'
+)
+
+
+def clip_prompt(i, n):
+    base = ROLE_CLIP_PROMPT.replace("The camera slowly pushes in, he stays chest-up in frame.", "He stays chest-up in frame.")
+    if i == 0:
+        move = "the camera dollies in toward his face from a wider studio shot"
+    elif i == n - 1:
+        move = "the camera slowly pulls back from his face to a wider studio shot"
+    else:
+        move = CAMERA_MOVES[(i - 1) % len(CAMERA_MOVES)]
+    return base + " Camera movement: " + move + "."
+
+
+def stage_hook(day, work):
+    f = work / "hook.json"
+    if f.exists():
+        return json.loads(f.read_text(encoding="utf-8"))
+    news = json.loads((work / "news_final.json").read_text(encoding="utf-8"))
+    src = [{"n": i + 1, "title": it["title"], "summary": it.get("summary", "")} for i, it in enumerate(news["items"])]
+    for _ in range(3):
+        txt = paraphrase.call_openai(HOOK_RULES + "\n\nНовости:\n" + json.dumps(src, ensure_ascii=False), "gpt-4.1")
+        try:
+            d = json.loads(txt[txt.find("{"):txt.rfind("}") + 1])
+            k = int(d["index"]) - 1
+            t = str(d["text"]).strip().upper()
+            if 0 <= k < len(src) and 3 <= len(t) <= 70:
+                f.write_text(json.dumps({"index": k, "text": t}, ensure_ascii=False), encoding="utf-8")
+                return {"index": k, "text": t}
+        except (ValueError, KeyError, json.JSONDecodeError):
+            pass
+    d = {"index": 0, "text": "СЕГОДНЯ В НОВОСТЯХ"}
+    f.write_text(json.dumps(d, ensure_ascii=False), encoding="utf-8")
+    return d
+
+
+def hook_png(text, path):
+    from PIL import Image, ImageDraw, ImageFont
+    font = ImageFont.truetype(lyric_video.FONT_BOLD, 92)
+    d0 = ImageDraw.Draw(Image.new("RGBA", (W, 10)))
+    rows = lyric_video.wrap(d0, text, font, W - 200)
+    step = 112
+    h = 60 + step * len(rows)
+    img = Image.new("RGBA", (W, h + 20), (0, 0, 0, 0)); d = ImageDraw.Draw(img)
+    d.rounded_rectangle((50, 10, W - 50, 10 + h), radius=28, fill=(205, 25, 35, 235))
+    y = 10 + 30
+    for r in rows:
+        w = d.textlength(r, font=font)
+        d.text(((W - w) / 2, y), r, font=font, fill=(255, 255, 255, 255))
+        y += step
+    img.save(path)
+    return img.height
+
+
 def role_scenes(items):
     src = [{"title": it["title"], "summary": it.get("summary", ""), "setting": it.get("_setting", "")} for it in items]
     for _ in range(3):
@@ -106,7 +176,8 @@ def role_scenes(items):
         try:
             arr = json.loads(txt[txt.find("["):txt.rfind("]") + 1])
             if len(arr) == len(items) and all(isinstance(x, str) and x.strip() for x in arr):
-                return ["Setting: " + x.strip() if not x.strip().lower().startswith("setting") else x for x in arr]
+                arr = ["Setting: " + x.strip() if not x.strip().lower().startswith("setting") else x for x in arr]
+                return [x.rstrip() + " Camera angle: " + ANGLES[(i + 1) % len(ANGLES)] + "." for i, x in enumerate(arr)]
         except json.JSONDecodeError:
             pass
     raise RuntimeError("не удалось придумать роли")
@@ -284,7 +355,7 @@ def stage_animate(day, work):
         a_f = work / f"seg_{i:02d}.mp3"
         cut_audio(audio_src, segs[i][0], segs[i][1], a_f)
         try:    # один платный вызов на сегмент, без слепых повторов
-            fal_video.avatar_clip(work / f"frame_{i:02d}.png", a_f, out, prompt=(ROLE_CLIP_PROMPT if CONCEPT == "studio_roles" else CLIP_PROMPT), go=True)
+            fal_video.avatar_clip(work / f"frame_{i:02d}.png", a_f, out, prompt=(clip_prompt(i, len(segs)) if CONCEPT == "studio_roles" else CLIP_PROMPT), go=True)
         except Exception as e:
             print(f"сегмент {i} не оживлён: {e}")
     with ThreadPoolExecutor(3) as ex:
@@ -297,20 +368,47 @@ def stage_assemble(day, work):
     lyr = json.loads((work / "lyrics.json").read_text(encoding="utf-8"))
     ts = json.loads((work / "suno_1_ts.json").read_text(encoding="utf-8"))["data"]["alignedWords"]
     t0, t_end, segs = segments(work, lyr, ts)
-    total = t_end - t0
+    main_total = t_end - t0
     lines = align.line_times(lyr, ts)
+    hook = stage_hook(day, work) if CONCEPT == "studio_roles" else None
+    HD = 2.8 if hook else 0.0                      # длительность крючка в начале
+    total = main_total + HD
     inputs, filt = [], []
+    n = len(segs)
+
+    def zoom(i, d, strong=False):
+        k = 0.18 if strong else 0.12
+        z = f"(1+{k}*t/{d:.3f})" if i % 2 == 0 else f"(1+{k}-{k}*t/{d:.3f})"     # наезд на чётных, отъезд на нечётных
+        return f"scale=w='trunc({W}*{z}/2)*2':h='trunc({H}*{z}/2)*2':eval=frame,crop={W}:{H},setsar=1"
+
     for i, (a, b) in enumerate(segs):
         d = b - a
         clip = work / f"clip_{i:02d}.mp4"
         if clip.exists():
             inputs += ["-i", str(clip)]
-            filt.append(f"[{i}:v]trim=duration={d:.3f},setpts=PTS-STARTPTS,scale=-2:{H},crop={W}:{H},fps={FPS},setsar=1[v{i}]")
+            fl = ",fade=t=in:st=0:d=0.10:color=white" if (hook or i > 0) else ""     # вспышка на склейке
+            filt.append(f"[{i}:v]trim=duration={d:.3f},setpts=PTS-STARTPTS,scale=-2:{H},crop={W}:{H},fps={FPS},setsar=1,{zoom(i, d)}{fl}[v{i}]")
         else:   # запасной вариант: кадр без анимации с плавным приближением
             inputs += ["-framerate", str(FPS), "-loop", "1", "-t", f"{d:.3f}", "-i", str(work / f"frame_{i:02d}.png")]
             filt.append(f"[{i}:v]scale=-2:{H},crop={W}:{H},zoompan=z='min(1+0.0004*on,1.08)':d=1:s={W}x{H}:fps={FPS},setsar=1[v{i}]")
-    n = len(segs)
-    filt.append("".join(f"[v{i}]" for i in range(n)) + f"concat=n={n}:v=1:a=0[base]")
+    idx = n
+    parts = []
+    if hook:   # крючок: начало самой цепляющей новости, увеличенный наезд, крупный текст
+        k = hook["index"] + 1
+        a_line = lines[1 + 2 * hook["index"]][1]
+        off = max(0.0, a_line - segs[k][0])
+        hc = work / f"clip_{k:02d}.mp4"
+        if hc.exists():
+            inputs += ["-i", str(hc)]
+            filt.append(f"[{idx}:v]trim=start={off:.3f}:duration={HD:.3f},setpts=PTS-STARTPTS,scale=-2:{H},crop={W}:{H},fps={FPS},setsar=1,{zoom(0, HD, True)}[hk]")
+        else:
+            inputs += ["-framerate", str(FPS), "-loop", "1", "-t", f"{HD:.3f}", "-i", str(work / f"frame_{k:02d}.png")]
+            filt.append(f"[{idx}:v]scale=-2:{H},crop={W}:{H},fps={FPS},setsar=1[hk]")
+        idx += 1
+        parts.append("[hk]")
+    parts += [f"[v{i}]" for i in range(n)]
+    filt.append("".join(parts) + f"concat=n={len(parts)}:v=1:a=0[base]")
+
     label = work / "label.png"
     if CONCEPT == "studio_roles":
         from PIL import Image, ImageDraw, ImageFont
@@ -322,27 +420,39 @@ def stage_assemble(day, work):
     else:
         lyric_video.label_overlay(news["date"], label)
     inputs += ["-framerate", str(FPS), "-loop", "1", "-t", f"{total:.3f}", "-i", str(label)]
-    filt.append(f"[base][{n}:v]overlay=0:{LABEL_Y}[o0]")
+    filt.append(f"[base][{idx}:v]overlay=0:{LABEL_Y}:enable='gte(t,{HD:.2f})'[o0]")
+    idx += 1
     cur = "o0"
+    if hook:   # крупный текст крючка на первых секундах
+        hp = work / "hook.png"
+        hook_png(hook["text"], hp)
+        inputs += ["-framerate", str(FPS), "-loop", "1", "-t", f"{total:.3f}", "-i", str(hp)]
+        filt.append(f"[{cur}][{idx}:v]overlay=0:{H - 1080}:enable='lt(t,{HD:.2f})'[oh]")
+        cur = "oh"; idx += 1
     for j, (txt, a, b) in enumerate(lines):
         png = work / f"line_{j:02d}.png"
         lyric_video.line_overlay(txt, png)
-        k = n + 1 + j
         inputs += ["-framerate", str(FPS), "-loop", "1", "-t", f"{total:.3f}", "-i", str(png)]
-        start = max(0.0, a - t0 - 0.05)
-        end = (lines[j + 1][1] - t0 - 0.05) if j + 1 < len(lines) else (b - t0 + 1.0)
-        filt.append(f"[{cur}][{k}:v]overlay=0:{LINE_Y}:enable='between(t,{start:.2f},{end:.2f})'[o{j + 1}]")
-        cur = f"o{j + 1}"
-    filt.append(f"[{cur}]fade=t=in:st=0:d=0.5,fade=t=out:st={total - 0.8:.2f}:d=0.8[vout]")
-    a_idx = n + 1 + len(lines)
-    inputs += ["-ss", f"{t0:.3f}", "-t", f"{total:.3f}", "-i", str(work / "suno_1.mp3")]
-    filt.append(f"[{a_idx}:a]afade=t=out:st={total - 1.2:.2f}:d=1.2,loudnorm=I=-14:TP=-1.5[aout]")
+        start = max(0.0, a - t0 - 0.05) + HD
+        end = ((lines[j + 1][1] - t0 - 0.05) if j + 1 < len(lines) else (b - t0 + 1.0)) + HD
+        filt.append(f"[{cur}][{idx}:v]overlay=0:{LINE_Y}:enable='between(t,{start:.2f},{end:.2f})'[p{j}]")
+        cur = f"p{j}"; idx += 1
+    filt.append(f"[{cur}]fade=t=out:st={total - 0.8:.2f}:d=0.8[vout]")     # без появления из чёрного: первый кадр сразу крючок
+
+    audio_inputs = []
+    if hook:
+        inputs += ["-ss", f"{a_line:.3f}", "-t", f"{HD:.3f}", "-i", str(work / "suno_1.mp3")]
+        audio_inputs.append(f"[{idx}:a]")
+        idx += 1
+    inputs += ["-ss", f"{t0:.3f}", "-t", f"{main_total:.3f}", "-i", str(work / "suno_1.mp3")]
+    audio_inputs.append(f"[{idx}:a]")
+    filt.append("".join(audio_inputs) + f"concat=n={len(audio_inputs)}:v=0:a=1,afade=t=out:st={total - 1.2:.2f}:d=1.2,loudnorm=I=-14:TP=-1.5[aout]")
     out = work / "reel_hero.mp4"
     subprocess.run(["ffmpeg", "-y", "-hide_banner", "-loglevel", "error", *inputs, "-filter_complex", ";".join(filt),
                     "-map", "[vout]", "-map", "[aout]", "-t", f"{total:.3f}", "-c:v", "libx264", "-pix_fmt", "yuv420p",
                     "-preset", "veryfast", "-crf", "18", "-c:a", "aac", "-b:a", "192k", "-ar", "44100",
                     "-movflags", "+faststart", str(out)], check=True)
-    print(f"готово: {out}, {total:.1f} с")
+    print(f"готово: {out}, {total:.1f} с" + (f", крючок: {hook['text']}" if hook else ""))
 
 
 STAGES = {"prep": stage_prep, "frames": stage_frames, "animate": stage_animate, "assemble": stage_assemble}

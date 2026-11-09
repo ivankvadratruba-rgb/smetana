@@ -518,9 +518,9 @@ def stage_assemble(day, work):
         audio_inputs.append("[ha]")
         idx += 1
     inputs += ["-ss", f"{t0:.3f}", "-t", f"{main_total:.3f}", "-i", str(work / "suno_1.mp3")]
-    filt.append(f"[{idx}:a]afade=t=in:st=0:d=0.15[ma]" if hook else f"[{idx}:a]anull[ma]")
+    filt.append(f"[{idx}:a]afade=t=in:st=0:d=0.15[ma]" if hook else f"[{idx}:a]afade=t=in:st=0:d=0.3[ma]")
     audio_inputs.append("[ma]")
-    tail = f"afade=t=out:st={total - 1.2:.2f}:d=1.2,loudnorm=I=-14:TP=-1.5,aresample=48000[aout]"
+    tail = f"afade=t=out:st={total - 1.2:.2f}:d=1.2,loudnorm=I=-14:TP=-1.5,aresample=44100[aout]"
     if len(audio_inputs) > 1:
         filt.append("".join(audio_inputs) + f"concat=n={len(audio_inputs)}:v=0:a=1," + tail)
     else:   # один вход: без concat (concat с одним входом портит метки времени звука и даёт треск)
@@ -528,9 +528,9 @@ def stage_assemble(day, work):
     out = work / "reel_hero.mp4"
     subprocess.run(["ffmpeg", "-y", "-hide_banner", "-loglevel", "error", *inputs, "-filter_complex", ";".join(filt),
                     "-map", "[vout]", "-map", "[aout]", "-t", f"{total:.3f}", "-c:v", "libx264", "-pix_fmt", "yuv420p",
-                    "-preset", "veryfast", "-crf", "18", "-c:a", "aac", "-profile:a", "aac_low", "-b:a", "192k", "-ar", "48000", "-ac", "2",
-                    "-r", str(FPS), "-fps_mode", "cfr", "-avoid_negative_ts", "make_zero",
-                    "-movflags", "+faststart", str(out)], check=True)   # формат под Instagram: 48 кГц, чистый старт потоков
+                    "-preset", "veryfast", "-crf", "18", "-bf", "0", "-c:a", "aac", "-profile:a", "aac_low", "-b:a", "192k", "-ar", "44100", "-ac", "2",
+                    "-r", str(FPS), "-fps_mode", "cfr", "-avoid_negative_ts", "make_zero", "-use_editlist", "0",
+                    "-movflags", "+faststart", str(out)], check=True)   # формат под Instagram: 44,1 кГц, без B-кадров, старт звука и видео ровно в нуле (проверено на опубликованном рилсе)
     print(f"готово: {out}, {total:.1f} с" + (f", крючок: {hook['text']}" if hook else ""))
 
 

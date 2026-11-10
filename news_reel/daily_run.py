@@ -239,7 +239,7 @@ def main():
     if "carousel" in todo:
         try:
             import carousel
-            carousel.run(day, publish=True, cfg=dict(cfg, name="карусель героя", variable="формат: карусель"))
+            carousel.run(day, publish=True, cfg=dict(cfg, name="карусель героя", variable="формат: карусель"), work=out)
         except BaseException as e:
             print("карусель не вышла:", repr(e)[:300], flush=True)
     if need_reel and video is None and "carousel" not in todo:

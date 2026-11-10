@@ -114,8 +114,8 @@ def make_caption(day, news, hook):
             "#новости #рэпновости #андеграунд #город")[:2200]
 
 
-def run(day, publish=False, cfg=None):
-    work = Path("out") / f"hero_{day.isoformat()}"
+def run(day, publish=False, cfg=None, work=None):
+    work = Path(work) if work else Path("out") / f"hero_{day.isoformat()}"
     paths, hook, news = build_slides(work, day)
     urls = []
     for i, p in enumerate(paths, 1):
